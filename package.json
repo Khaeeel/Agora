@@ -1,0 +1,14 @@
+{
+  "name": "agora",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "dev:server": "pnpm --filter @agora/server dev",
+    "dev:web": "pnpm --filter @agora/web dev",
+    "build": "pnpm -r build",
+    "smoke:driver": "pnpm --filter @agora/server smoke:driver",
+    "smoke:loop": "pnpm --filter @agora/server smoke:loop"
+  }
+}

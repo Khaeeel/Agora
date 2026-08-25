@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# The whole data dir. The old `data/*.db` pattern missed the -wal and -shm
+# siblings, which hold live transcript content (the -wal was 1.3MB).
+data/
+
+# Chrome's profile — 97MB, and it holds the logged-in session cookies for the
+# dev app and console. Publishing it would hand over an authenticated session.
+.chrome-profile/
+
+# Screenshots agents drop while working. Evidence, not source — and they are
+# pictures of a real account, so they do not belong in version control.
+*.png
+!apps/web/public/*.png
+
+# Credentials. .env carries the dev login password.
+.env
+.env.*
+!.env.example
+*.pem
+*.key

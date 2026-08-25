@@ -1,0 +1,123 @@
+/*
+ * Agora tokens — "oxblood + parchment".
+ *
+ * Theme has THREE states, not two: an explicit choice stamps data-theme on
+ * <html>, and the default "system" setting stamps nothing, where only
+ * prefers-color-scheme separates light from dark. So: the full light palette
+ * lives on bare :root, and both dark blocks redefine ONLY tokens. No component
+ * may declare a colour inside a media or [data-theme] block.
+ */
+
+:root {
+  /* Tells the browser which way to render native widgets — dropdown popups,
+     scrollbars, date pickers. Without it a dark page gets light-mode controls. */
+  color-scheme: light;
+
+  /* rail — the deep maroon sidebar */
+  --rail: #4a2124;
+  --rail-raised: #5c2b2e;
+  --rail-hairline: #613034;
+  --rail-ink: #f4e8e5;
+  --rail-muted: #b9968f;
+
+  /* transcript — the chat ground is warm cream; panels sit white above it */
+  --canvas: #f7f3ee;
+  --surface: #ffffff;
+  --raised: #f2ece4;
+  --hairline: #eae2d8;
+  --hairline-strong: #ddd2c4;
+
+  /* text — warm neutrals biased toward the accent, never pure grey */
+  --ink: #2b2422;
+  --ink-soft: #574c46;
+  --muted: #8b7d75;
+
+  /* accent */
+  --accent: #c4544c;
+  --accent-hover: #ab433c;
+  --accent-ink: #ffffff;
+  --accent-wash: #f8e9e6;
+
+  /* semantic status — deliberately separate from the accent hue */
+  --ok: #3fa96a;
+  --warn: #e09a2e;
+  --info: #5a7fa8;
+  --off: #a39a94;
+
+  --shadow-card: 0 1px 2px rgb(42 26 24 / 0.05), 0 8px 24px -14px rgb(42 26 24 / 0.16);
+  --shadow-pop: 0 8px 32px -8px rgb(42 26 24 / 0.28);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  --font-ui: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --rail: #1f1214;
+    --rail-raised: #331e21;
+    --rail-hairline: #40272a;
+    --rail-ink: #f0e2de;
+    --rail-muted: #a88a84;
+
+    --canvas: #191412;
+    --surface: #231c19;
+    --raised: #2c2320;
+    --hairline: #3a2e2a;
+    --hairline-strong: #4a3a35;
+
+    --ink: #f2e8dd;
+    --ink-soft: #d3c3b6;
+    --muted: #a2927f;
+
+    --accent: #d96a63;
+    --accent-hover: #e88079;
+    --accent-ink: #1a0f0e;
+    --accent-wash: #38211f;
+
+    --ok: #6bbf8a;
+    --warn: #dfab52;
+    --info: #7ea3cc;
+    --off: #7d7671;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -14px rgb(0 0 0 / 0.6);
+    --shadow-pop: 0 8px 32px -8px rgb(0 0 0 / 0.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --rail: #1f1214;
+  --rail-raised: #331e21;
+  --rail-hairline: #40272a;
+  --rail-ink: #f0e2de;
+  --rail-muted: #a88a84;
+
+  --canvas: #191412;
+  --surface: #231c19;
+  --raised: #2c2320;
+  --hairline: #3a2e2a;
+  --hairline-strong: #4a3a35;
+
+  --ink: #f2e8dd;
+  --ink-soft: #d3c3b6;
+  --muted: #a2927f;
+
+  --accent: #d96a63;
+  --accent-hover: #e88079;
+  --accent-ink: #1a0f0e;
+  --accent-wash: #38211f;
+
+  --ok: #6bbf8a;
+  --warn: #dfab52;
+  --info: #7ea3cc;
+  --off: #7d7671;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -14px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 8px 32px -8px rgb(0 0 0 / 0.7);
+}
