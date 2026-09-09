@@ -17,6 +17,13 @@ function int(key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function num(key: string, fallback: number): number {
+  const v = process.env[key];
+  if (v === undefined || v === "") return fallback;
+  const n = Number.parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function bool(key: string, fallback: boolean): boolean {
   const v = process.env[key];
   if (v === undefined || v === "") return fallback;
@@ -26,6 +33,12 @@ function bool(key: string, fallback: boolean): boolean {
 export const config = {
   root: ROOT,
   agentsDir: resolve(ROOT, "agents"),
+  /**
+   * Capability bundles an orchestrator may forge a new agent from. Only Dominic
+   * edits these; the orchestrator picks a template, a name and a brief, never a
+   * tool. Kept outside agentsDir so the loader never mistakes one for a member.
+   */
+  templatesDir: resolve(ROOT, "templates", "agents"),
   dbPath: resolve(ROOT, "data", "agora.db"),
 
   claudeBin: str("CLAUDE_BIN", "/home/dominickooya/.local/bin/claude"),
@@ -142,6 +155,15 @@ export const config = {
    * are. Never truncates — see Orchestrator.enforceLength.
    */
   lengthGuard: bool("AGORA_LENGTH_GUARD", true),
+  /**
+   * Dollars one run may spend before it stops and asks. The first real budget
+   * ceiling: a subscription has no $ cap and research turns are the expensive
+   * kind. 0 disables. Resume grants a fresh allowance.
+   */
+  goalCostCapUsd: num("AGORA_GOAL_COST_CAP_USD", 5),
+  /** Forged agents per goal and per room, so a room cannot fill itself with helpers. */
+  maxSpawnsPerGoal: int("AGORA_MAX_SPAWNS_PER_GOAL", 3),
+  maxForgedPerRoom: int("AGORA_MAX_FORGED_PER_ROOM", 12),
   notifyMinIntervalS: int("AGORA_NOTIFY_MIN_INTERVAL_S", 60),
 
   port: int("AGORA_PORT", 8787),

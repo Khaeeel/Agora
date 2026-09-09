@@ -11,8 +11,15 @@ import {
   listGoals,
   listMessages,
   listRooms,
+  setRoomMembers,
 } from "./db.ts";
-import { loadAgents, renderAgentFile, watchAgents, writeAgentFile } from "./agents/registry.ts";
+import {
+  deleteAgentFile,
+  loadAgents,
+  renderAgentFile,
+  watchAgents,
+  writeAgentFile,
+} from "./agents/registry.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import type { Agent, AgentStatus, ClientCommand, ServerEvent } from "./types.ts";
 
@@ -204,6 +211,46 @@ export async function buildServer(): Promise<
           .code(400)
           .send({ error: err instanceof Error ? err.message : String(err) });
       }
+    },
+  );
+
+  /**
+   * Retire a forged agent. Hand-made agents are Dominic's files and stay
+   * Dominic's to delete; this only cleans up what an orchestrator created.
+   */
+  app.delete<{ Params: { id: string } }>("/api/agents/:id", async (req, reply) => {
+    const agent = agents.get(req.params.id);
+    if (!agent) return reply.code(404).send({ error: "No such agent" });
+    if (!agent.forgedBy) {
+      return reply.code(400).send({ error: `${agent.name} was not forged; delete the file by hand.` });
+    }
+    for (const room of listRooms()) {
+      if (room.orchestratorId === agent.id) {
+        return reply.code(400).send({ error: `${agent.name} directs ${room.name}.` });
+      }
+      if (room.members.includes(agent.id)) {
+        setRoomMembers(room.id, room.members.filter((m) => m !== agent.id));
+      }
+    }
+    deleteAgentFile(agent.id);
+    agents = loadAgents();
+    broadcast({ type: "agents", agents: [...agents.values()] });
+    broadcast({ type: "rooms", rooms: listRooms() });
+    return { ok: true };
+  });
+
+  /** Replace a room's members. The orchestrator cannot be removed this way. */
+  app.put<{ Params: { id: string }; Body: { members?: string[] } }>(
+    "/api/rooms/:id/members",
+    async (req, reply) => {
+      const rooms = listRooms();
+      const room = rooms.find((r) => r.id === req.params.id);
+      if (!room) return reply.code(404).send({ error: "No such room" });
+      const wanted = (req.body?.members ?? []).filter((m) => agents.has(m));
+      if (!wanted.includes(room.orchestratorId)) wanted.unshift(room.orchestratorId);
+      const updated = setRoomMembers(room.id, [...new Set(wanted)]);
+      broadcast({ type: "rooms", rooms: listRooms() });
+      return { room: updated };
     },
   );
 

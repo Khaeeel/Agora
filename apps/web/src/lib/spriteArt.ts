@@ -218,8 +218,9 @@ export function drawCharacter(
 
   /* ── anything drawn BEHIND the body ─────────────────────────────────── */
   if (pose === "pressUp") drawBar(ctx, p, 2, d.plateH, d.barHalf);
-  // A squat bar rests across the shoulders, so it sits behind the head.
-  if (squatting) drawBar(ctx, p, shoulderY - 1, d.plateH, d.barHalf);
+  // A squat bar rests across the traps, not across the face. At shoulderY - 1
+  // the plates sat level with the ears; it belongs just below the shoulder line.
+  if (squatting) drawBar(ctx, p, shoulderY + 2, d.plateH, d.barHalf);
 
   /* ── silhouette ─────────────────────────────────────────────────────── */
 

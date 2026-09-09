@@ -33,6 +33,8 @@ export interface Agent {
   orchestrator: boolean;
   /** Absolute path of the .md this was parsed from. */
   file: string;
+  /** Orchestrator id that forged this agent from a template, or null for a hand-made one. */
+  forgedBy: string | null;
 }
 
 /** One option on a question the room is putting to Dominic. */

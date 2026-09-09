@@ -25,6 +25,8 @@ export interface Agent {
   allow: string[];
   orchestrator: boolean;
   file: string;
+  /** Set when an orchestrator forged this agent from a template. */
+  forgedBy?: string | null;
 }
 
 export interface Message {

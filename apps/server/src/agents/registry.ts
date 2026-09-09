@@ -80,7 +80,107 @@ export function parseAgentFile(path: string): Agent {
     ),
     orchestrator: meta["orchestrator"] === true,
     file: path,
+    forgedBy: typeof meta["forged_by"] === "string" ? meta["forged_by"] : null,
   };
+}
+
+/** Slug rule for anything an agent names: an id, a template, a room rules file. */
+export const SLUG = /^[a-z0-9][a-z0-9-]{0,40}$/;
+
+export function listTemplates(): string[] {
+  try {
+    return readdirSync(config.templatesDir)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => f.slice(0, -3))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Forge a new agent from a template.
+ *
+ * The template's frontmatter is copied BYTE FOR BYTE — tools, allow, add_dirs,
+ * mcp and the comments explaining them — plus two lines recording who forged
+ * it and when. The orchestrator supplies only identity and a brief. That is the
+ * whole safety argument: an agent can create a colleague, and can never grant
+ * one a capability, because the only capabilities that exist are the ones
+ * Dominic wrote into a template.
+ */
+export function forgeAgent(input: {
+  template: string;
+  id: string;
+  name: string;
+  role: string;
+  brief: string;
+  forgedBy: string;
+}): Agent {
+  const template = input.template.trim().toLowerCase();
+  const id = input.id.trim().toLowerCase();
+  if (!SLUG.test(template)) throw new Error(`Bad template name "${input.template}"`);
+  if (!SLUG.test(id)) throw new Error(`Bad agent id "${input.id}" — lowercase letters, digits and dashes`);
+  const templatePath = join(config.templatesDir, `${template}.md`);
+  if (!existsSync(templatePath)) throw new Error(`No template called "${template}"`);
+  const path = join(config.agentsDir, `${id}.md`);
+  if (existsSync(path)) throw new Error(`An agent called "${id}" already exists`);
+
+  const raw = readFileSync(templatePath, "utf8");
+  const fm = raw.match(FRONTMATTER);
+  if (!fm) throw new Error(`Template "${template}" has no frontmatter`);
+  const base = parseAgentFile(templatePath);
+  const name = input.name.trim().slice(0, 60) || base.name;
+  const role = input.role.trim().slice(0, 60) || base.role;
+  const brief = input.brief.trim().slice(0, 2000);
+
+  const frontmatter =
+    fm[1] +
+    `\n# Forged from templates/agents/${template}.md. Capabilities above are the template's.\n` +
+    `forged_by: ${input.forgedBy}\n` +
+    `forged_at: ${new Date().toISOString()}\n`;
+
+  const body = [
+    `# Agent: ${name}`,
+    "",
+    "## Name",
+    name,
+    "",
+    "## Role",
+    role,
+    "",
+    "## Description",
+    base.description.trim(),
+    "",
+    "## Instructions",
+    base.instructions.trim(),
+    "",
+    "### Your brief",
+    brief,
+    "",
+    "## Personality",
+    base.personality.trim(),
+    "",
+  ].join("\n");
+
+  writeFileSync(path, `---\n${frontmatter}---\n\n${body}`, "utf8");
+  return parseAgentFile(path);
+}
+
+/**
+ * The rules file a new room reads. Written once at creation so the room has a
+ * place for project facts from the first turn; Dominic or the mechanic fills it.
+ */
+export function writeRoomRules(roomName: string, topic: string): string | null {
+  const slug = slugify(roomName);
+  if (!slug) return null;
+  const path = join(config.agentsDir, `_rules-${slug}.md`);
+  if (existsSync(path)) return path;
+  writeFileSync(
+    path,
+    [`# ${roomName}`, "", topic.trim() ? `Purpose: ${topic.trim()}` : "Purpose: (fill in)", ""].join("\n"),
+    "utf8",
+  );
+  return path;
 }
 
 /**

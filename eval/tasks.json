@@ -1,0 +1,25 @@
+[
+  {
+    "id": "short-answer",
+    "prompt": "{agent}, sa isang pangungusap lang: ano ang pinaka-importanteng rule sa room na ito?",
+    "maxWords": 45,
+    "mustContain": [],
+    "mustNotMatch": ["^#", "^- ", "^\\* ", "What I checked", "Not checked"]
+  },
+  {
+    "id": "cite-and-hand",
+    "prompt": "{agent}, sagutin mo ito at i-cite ang message id ko: dapat bang Taglish ang sagot dito? Tapos i-hand mo kay {orchestrator}.",
+    "maxWords": 45,
+    "mustContain": ["[#"],
+    "mustNotMatch": [],
+    "needsMarkers": true
+  },
+  {
+    "id": "pass-when-nothing",
+    "prompt": "{orchestrator}, note lang para sa lahat, walang kailangang gawin ngayon. {agent}, kung wala kang idadagdag, PASS lang.",
+    "maxWords": 45,
+    "mustContain": [],
+    "mustNotMatch": [],
+    "expectPass": true
+  }
+]

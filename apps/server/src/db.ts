@@ -296,6 +296,12 @@ export function createRoom(input: {
   return room;
 }
 
+/** Replace a room's member list. The orchestrator must stay in it; callers check. */
+export function setRoomMembers(roomId: string, members: string[]): Room | null {
+  db.prepare(`UPDATE rooms SET members = ? WHERE id = ?`).run(JSON.stringify(members), roomId);
+  return getRoom(roomId);
+}
+
 export function listMessages(roomId: string, limit = 500): Message[] {
   const rows = db
     .prepare(

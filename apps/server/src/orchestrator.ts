@@ -1,23 +1,35 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { relative } from "node:path";
 import { config } from "./config.ts";
 import {
   addMessage,
   closeGoal,
   createGoal,
   getGoal,
+  createRoom,
   getMindStone,
   getLastSpokenSeq,
   getRoom,
   listGoals,
   listMessages,
+  listRooms,
   reopenGoal,
   saveMindStone,
   setLastSpokenSeq,
   unfoldedMessages,
   setGoalHandoff,
+  setRoomMembers,
   updateStep,
 } from "./db.ts";
-import { buildSystemPrompt } from "./agents/registry.ts";
+import {
+  SLUG,
+  buildSystemPrompt,
+  forgeAgent,
+  listTemplates,
+  slugify,
+  writeRoomRules,
+} from "./agents/registry.ts";
 import {
   PROTOCOL_VERSION,
   REPLY_LIMITS,
@@ -74,6 +86,46 @@ const PLAN_SCHEMA = {
       type: "string",
       description: "The goal in one line, as an outcome rather than an activity.",
     },
+    spawn: {
+      type: ["object", "null"],
+      description:
+        "Forge a new member for this room, ONLY when no current member can do a step. Null almost always. The template fixes what the new agent may do — you choose who it is and what it works on, never what it may touch.",
+      properties: {
+        template: {
+          type: "string",
+          description:
+            "helper = chat-only specialist who reasons from the transcript. researcher = web search, page reading and the ECC skills library, for finding things out. mechanic = improves agents' Instructions/Personality through a guarded wrapper and measures the result.",
+        },
+        id: {
+          type: "string",
+          description: "Slug: lowercase letters, digits and dashes, e.g. bland-docs. Becomes the agent id.",
+        },
+        name: { type: "string", description: "Display name, e.g. Bland Docs." },
+        role: { type: "string", description: "Two or three words, e.g. Docs Researcher." },
+        brief: {
+          type: "string",
+          description: "What this agent is for, in two or three sentences. Appended to its instructions.",
+        },
+      },
+      required: ["template", "id", "name", "role", "brief"],
+      additionalProperties: false,
+    },
+    createRoom: {
+      type: ["object", "null"],
+      description:
+        "ONLY when Dominic's message explicitly asks for a new room or channel. Null otherwise — a task that merely feels like it deserves its own room does not qualify.",
+      properties: {
+        name: { type: "string", description: "Short room name, e.g. Billing Audit." },
+        topic: { type: "string", description: "One line on what the room is for." },
+        members: {
+          type: "array",
+          items: { type: "string" },
+          description: "Agent ids from the roster to seed it with. You may include yourself.",
+        },
+      },
+      required: ["name", "topic", "members"],
+      additionalProperties: false,
+    },
     steps: {
       type: "array",
       description:
@@ -92,15 +144,25 @@ const PLAN_SCHEMA = {
       },
     },
   },
-  required: ["mode", "responder", "discuss", "needsLookup", "goal", "steps"],
+  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "createRoom", "goal", "steps"],
   additionalProperties: false,
 } as const;
+
+interface SpawnRequest {
+  template: string;
+  id: string;
+  name: string;
+  role: string;
+  brief: string;
+}
 
 interface Plan {
   mode: "answer" | "work";
   responder: string | null;
   discuss: string[] | null;
   needsLookup: boolean | null;
+  spawn: SpawnRequest | null;
+  createRoom: { name: string; topic: string; members: string[] } | null;
   goal: string;
   steps: Array<{ title: string; owner: string | null }>;
 }
@@ -175,6 +237,30 @@ const DECISION_SCHEMA = {
       description:
         "ONLY for work this room genuinely cannot do itself — because it has no execution grant, or because the task needs something outside it such as a multi-hour training run or a push. Then: the exact prompt Dominic pastes into Claude CLI, with the task, files, acceptance criteria and an instruction to verify. Plain text, no surrounding commentary. Otherwise NULL. In a room that can execute, handing him a prompt instead of a result is a failure, not a deliverable — the findings go in say, and handoff stays null.",
     },
+    spawn: {
+      type: ["object", "null"],
+      description:
+        "Forge a new member for this room, ONLY when no current member can do a step. Null almost always. The template fixes what the new agent may do — you choose who it is and what it works on, never what it may touch.",
+      properties: {
+        template: {
+          type: "string",
+          description:
+            "helper = chat-only specialist who reasons from the transcript. researcher = web search, page reading and the ECC skills library, for finding things out. mechanic = improves agents' Instructions/Personality through a guarded wrapper and measures the result.",
+        },
+        id: {
+          type: "string",
+          description: "Slug: lowercase letters, digits and dashes, e.g. bland-docs. Becomes the agent id.",
+        },
+        name: { type: "string", description: "Display name, e.g. Bland Docs." },
+        role: { type: "string", description: "Two or three words, e.g. Docs Researcher." },
+        brief: {
+          type: "string",
+          description: "What this agent is for, in two or three sentences. Appended to its instructions.",
+        },
+      },
+      required: ["template", "id", "name", "role", "brief"],
+      additionalProperties: false,
+    },
     notify: {
       type: ["object", "null"],
       description:
@@ -194,13 +280,14 @@ const DECISION_SCHEMA = {
       additionalProperties: false,
     },
   },
-  required: ["say", "next", "steps", "discuss", "verify", "handoff", "notify"],
+  required: ["say", "next", "steps", "discuss", "spawn", "verify", "handoff", "notify"],
   additionalProperties: false,
 } as const;
 
 interface Decision {
   say: string;
   next: string | null;
+  spawn: SpawnRequest | null;
   steps: Array<{ index: number; status: StepStatus; note: string | null }> | null;
   discuss: { agents: string[]; question: string } | null;
   verify: string | null;
@@ -730,6 +817,39 @@ function turnInstruction(lead: string): string {
   ].join("\n");
 }
 
+/**
+ * Commit one file the harness wrote on an agent's behalf, authored as that
+ * agent, so `git log --author=@agents.agora` is the audit trail and one revert
+ * undoes any forge. Best effort: a commit failing must never fail a run.
+ */
+function gitCommitFile(file: string, message: string, author: string): void {
+  const rel = relative(config.root, file);
+  const git = (args: string[]): Promise<void> =>
+    new Promise((resolve, reject) => {
+      execFile("git", ["-C", config.root, ...args], { timeout: 15_000 }, (err) =>
+        err ? reject(err) : resolve(),
+      );
+    });
+  void git(["add", "--", rel])
+    .then(() =>
+      git([
+        "-c",
+        `user.name=${author}`,
+        "-c",
+        `user.email=${author}@agents.agora`,
+        "commit",
+        "-q",
+        "-o",
+        rel,
+        "-m",
+        `${message}\n\nAgora-Forge: ${author} ${rel}`,
+      ]),
+    )
+    .catch((err: unknown) =>
+      console.error("[git] commit failed:", err instanceof Error ? err.message : err),
+    );
+}
+
 /** Two nullable turn costs as one nullable message cost. */
 function sumCost(a: number | null, b: number | null): number | null {
   if (a == null && b == null) return null;
@@ -786,6 +906,9 @@ export class Orchestrator {
 
   /** Auto-resumes spent per goal. Bounded so a stuck goal cannot spin forever. */
   private readonly resumes = new Map<string, number>();
+
+  /** Agents forged per goal (keyed by goal id, or the room id before a goal exists). */
+  private readonly spawned = new Map<string, number>();
 
   private readonly runs = new Map<string, { abort: AbortController; state: RunState }>();
 
@@ -909,6 +1032,135 @@ export class Orchestrator {
     state.phase = phase;
     state.phaseDetail = detail;
     this.publishRun(state);
+  }
+
+  /**
+   * Honour an orchestrator's `spawn`: forge the agent from a template, add it
+   * to the room, commit the file, and put it on this run's roster so it can be
+   * dispatched on the very next turn.
+   *
+   * Every refusal is posted to the room rather than thrown: the orchestrator
+   * asked for something the harness would not do, and it needs to know why so
+   * it can carry on with the members it has.
+   */
+  private forge(opts: {
+    roomId: string;
+    room: Room;
+    orchestrator: Agent;
+    roster: Agent[];
+    agents: Map<string, Agent>;
+    request: SpawnRequest;
+    goalId: string | null;
+  }): Agent | null {
+    const { roomId, room, orchestrator, roster, agents, request, goalId } = opts;
+    const key = goalId ?? roomId;
+    const refuse = (why: string): null => {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `Not forged: ${why}` });
+      return null;
+    };
+    const templates = listTemplates();
+    const template = (request.template ?? "").trim().toLowerCase();
+    if (!templates.includes(template)) {
+      return refuse(`no template "${request.template}". Templates: ${templates.join(", ") || "(none)"}.`);
+    }
+    const forgedHere = roster.filter((a) => a.forgedBy).length;
+    if (forgedHere >= config.maxForgedPerRoom) {
+      return refuse(`this room already holds ${forgedHere} forged agents (cap ${config.maxForgedPerRoom}). Retire one first.`);
+    }
+    const spent = this.spawned.get(key) ?? 0;
+    if (spent >= config.maxSpawnsPerGoal) {
+      return refuse(`${spent} agents already forged for this goal (cap ${config.maxSpawnsPerGoal}).`);
+    }
+    if (!SLUG.test((request.id ?? "").trim().toLowerCase())) {
+      return refuse(`"${request.id}" is not a valid id — lowercase letters, digits and dashes.`);
+    }
+    if (agents.has(request.id.trim().toLowerCase())) {
+      return refuse(`an agent called "${request.id}" already exists; add it to the room instead.`);
+    }
+
+    let agent: Agent;
+    try {
+      agent = forgeAgent({ ...request, forgedBy: orchestrator.id });
+    } catch (err) {
+      return refuse(err instanceof Error ? err.message : String(err));
+    }
+    this.spawned.set(key, spent + 1);
+
+    // On this run's roster now; the watcher will also reload the server's map.
+    agents.set(agent.id, agent);
+    roster.push(agent);
+    const members = [...new Set([...room.members, agent.id])];
+    room.members = members;
+    setRoomMembers(roomId, members);
+    this.emit({ type: "rooms", rooms: listRooms() });
+    this.emit({ type: "agents", agents: [...agents.values()] });
+
+    this.post({
+      roomId,
+      authorId: "system",
+      kind: "event",
+      text: `forged · ${agent.name} (${agent.role}) from ${template} · by ${orchestrator.name}`,
+    });
+    gitCommitFile(agent.file, `forge(${agent.id}): ${template} by ${orchestrator.id}`, orchestrator.id);
+    return agent;
+  }
+
+  /**
+   * Honour a planner's `createRoom`. Only when Dominic's own message asked for
+   * a room — the schema says so, and the cheap word check here is the backstop
+   * against a planner that got carried away. The new room reads a fresh rules
+   * file and inherits WhatsApp from the global JID until Dominic sets
+   * AGORA_NOTIFY_JID_<SLUG>, which the notice below tells him.
+   */
+  private createRoomFor(opts: {
+    roomId: string;
+    orchestrator: Agent;
+    agents: Map<string, Agent>;
+    humanText: string;
+    request: { name: string; topic: string; members: string[] };
+  }): void {
+    const { roomId, orchestrator, agents, humanText, request } = opts;
+    const refuse = (why: string): void => {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `Room not created: ${why}` });
+    };
+    if (!/\b(room|channel|kwarto|group)\b/i.test(humanText)) {
+      return refuse("Dominic's message did not ask for one.");
+    }
+    const name = (request.name ?? "").trim().slice(0, 60);
+    const slug = slugify(name);
+    if (!name || !slug) return refuse("it needs a name.");
+    if (listRooms().some((r) => slugify(r.name) === slug)) {
+      return refuse(`"${name}" already exists.`);
+    }
+    const members = [...new Set((request.members ?? []).filter((m) => agents.has(m)))];
+    if (!members.includes(orchestrator.id)) members.unshift(orchestrator.id);
+    const orchestratorId = members.find((m) => agents.get(m)?.orchestrator) ?? orchestrator.id;
+
+    const room = createRoom({ name, topic: (request.topic ?? "").trim(), members, orchestratorId });
+    const rules = writeRoomRules(name, room.topic);
+    if (rules) gitCommitFile(rules, `room(${slug}): rules file`, orchestrator.id);
+    this.emit({ type: "rooms", rooms: listRooms() });
+    this.post({
+      roomId,
+      authorId: "system",
+      kind: "event",
+      text: `room created · ${name} · ${members.length} member${members.length === 1 ? "" : "s"} · orchestrator ${agents.get(orchestratorId)?.name ?? orchestratorId}`,
+    });
+    this.post({
+      roomId,
+      authorId: "system",
+      kind: "notice",
+      text:
+        `Dominic: ang bagong room na "${name}" ay magpapadala sa global na WhatsApp group hangga't ` +
+        `walang AGORA_NOTIFY_JID_${slug.toUpperCase().replace(/-/g, "_")} sa .env ` +
+        `(ilagay ang JID, o "off"). Rules file: agents/_rules-${slug}.md`,
+    });
+    this.post({
+      roomId: room.id,
+      authorId: "system",
+      kind: "event",
+      text: `created by ${orchestrator.name} · ${humanText.slice(0, 120)}`,
+    });
   }
 
   /** Run one agent turn, streaming deltas out as they arrive. */
@@ -1982,6 +2234,13 @@ export class Orchestrator {
 
         const plan = (planResult.structured ?? null) as Plan | null;
 
+        if (plan?.createRoom && !abort.signal.aborted) {
+          this.createRoomFor({ roomId, orchestrator, agents, humanText, request: plan.createRoom });
+        }
+        if (plan?.spawn && !abort.signal.aborted) {
+          this.forge({ roomId, room, orchestrator, roster, agents, request: plan.spawn, goalId: null });
+        }
+
         // --- answer mode: he asked, he did not assign -------------------------
         // No goal is created, which also means the finally block sends no
         // WhatsApp run report — a question answered in the room should not buzz
@@ -2179,6 +2438,28 @@ export class Orchestrator {
       const lastSpokeTurn = new Map<string, number>();
 
       while (!abort.signal.aborted) {
+        // The money backstop. A run that has spent its allowance stops and says
+        // so; Resume grants a fresh one. Blocked, not turn_cap, so it never
+        // picks itself back up and spends another.
+        if (config.goalCostCapUsd > 0 && state.costUsd >= config.goalCostCapUsd) {
+          state.stopReason = "blocked";
+          const spent = `$${state.costUsd.toFixed(2)}`;
+          this.post({
+            roomId,
+            authorId: "system",
+            kind: "handoff",
+            text:
+              `Umabot na sa ${spent} ang run na ito (cap: $${config.goalCostCapUsd}). ` +
+              `Huminto muna ako. Press Resume kung ituloy, o sabihin kung ano ang babaguhin.`,
+          });
+          this.recordNotify(
+            roomId,
+            `⏸️ ${room.name}: umabot na sa ${spent} ang run. Press Resume sa Agora kung ituloy.`,
+            "escalation",
+          );
+          break;
+        }
+
         // Whichever comes first: the turn budget, or ten minutes of wall clock.
         // A room grinding through one long browser turn still owes Dominic a
         // status line, and a room burning fast cheap turns still owes him one.
@@ -2348,6 +2629,18 @@ export class Orchestrator {
             costUsd: decisionResult.costUsd,
             durationMs: decisionResult.durationMs,
             promptSha: decisionResult.promptSha,
+          });
+        }
+
+        if (decision.spawn) {
+          this.forge({
+            roomId,
+            room,
+            orchestrator,
+            roster,
+            agents,
+            request: decision.spawn,
+            goalId: state.goalId,
           });
         }
 
