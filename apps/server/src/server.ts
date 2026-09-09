@@ -254,6 +254,23 @@ export async function buildServer(): Promise<
     },
   );
 
+  /**
+   * The private thread with one agent: a hidden room named "dm:<id>" holding
+   * only that agent. Created on first open, reused after. The UI keeps these
+   * out of the crew list and sends into them as direct messages, so nothing
+   * here plans, and nothing here reaches WhatsApp.
+   */
+  app.post<{ Params: { agentId: string } }>("/api/dm/:agentId", async (req, reply) => {
+    const agent = agents.get(req.params.agentId);
+    if (!agent) return reply.code(404).send({ error: "No such agent" });
+    const name = `dm:${agent.id}`;
+    const existing = listRooms().find((r) => r.name === name);
+    if (existing) return { room: existing };
+    const room = createRoom({ name, topic: `Private messages with ${agent.name}`, members: [agent.id], orchestratorId: agent.id });
+    broadcast({ type: "rooms", rooms: listRooms() });
+    return { room };
+  });
+
   // ---- WebSocket ----------------------------------------------------------
 
   app.get("/ws", { websocket: true }, (socket) => {
@@ -285,6 +302,11 @@ export async function buildServer(): Promise<
         const dm = cmd.text.trim().match(/^@([a-z0-9][a-z0-9_-]*)\s+([\s\S]+)$/i);
         if (dm) {
           void orchestrator.direct(cmd.roomId, dm[1]!, dm[2]!.trim());
+          return;
+        }
+        const dmRoom = listRooms().find((r) => r.id === cmd.roomId && r.name.startsWith("dm:"));
+        if (dmRoom) {
+          void orchestrator.direct(cmd.roomId, dmRoom.name.slice(3), cmd.text.trim());
           return;
         }
         void orchestrator.start(cmd.roomId, cmd.text.trim());

@@ -14,6 +14,9 @@ interface Props {
   onNewRoom: () => void;
   onNewAgent: () => void;
   onEditAgent: (agent: Agent) => void;
+  /** Open the private thread with one agent. */
+  onOpenDm: (agent: Agent) => void;
+  dmAgentId: string | null;
   onReconnect: () => void;
   view: View;
   onSelectView: (view: View) => void;
@@ -65,6 +68,8 @@ export function Rail({
   onNewRoom,
   onNewAgent,
   onEditAgent,
+  onOpenDm,
+  dmAgentId,
   onReconnect,
   view,
   onSelectView,
@@ -74,7 +79,7 @@ export function Rail({
   agentsById,
   blockedRooms,
 }: Props) {
-  const [tab, setTab] = useState<"rooms" | "agents">("rooms");
+  const [tab, setTab] = useState<"rooms" | "agents">(dmAgentId ? "agents" : "rooms");
   const [query, setQuery] = useState("");
 
   const needle = query.trim().toLowerCase();
@@ -179,14 +184,21 @@ export function Rail({
             <p className="rail__empty">No agents match.</p>
           ) : (
             shownAgents.map((agent) => (
-              <button className="agent-item" key={agent.id} onClick={() => onEditAgent(agent)} title={`Edit ${agent.name}`}>
-                <Av agent={agent} size={26} />
-                <span style={{ minWidth: 0 }}>
-                  <span className="aname" style={{ color: agent.color }}>{agent.name}</span>
-                  <span className="astate">{agent.role}</span>
-                </span>
-                <span className={`sdot ${statuses[agent.id] === "processing" ? "working" : "idle"}`} style={{ position: "static", marginLeft: "auto" }} />
-              </button>
+              <div className={`agent-item${dmAgentId === agent.id ? " on" : ""}`} key={agent.id}>
+                <button className="agent-open" onClick={() => onOpenDm(agent)} title={`Message ${agent.name} privately`}>
+                  <span className="mav">
+                    <Av agent={agent} size={26} />
+                    <span className={`sdot ${statuses[agent.id] === "processing" ? "working" : "idle"}`} />
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span className="aname" style={{ color: agent.color }}>{agent.name}</span>
+                    <span className="astate">{agent.role}</span>
+                  </span>
+                </button>
+                <button className="amsg" onClick={() => onEditAgent(agent)} title={`Edit ${agent.name}`} aria-label={`Edit ${agent.name}`}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                </button>
+              </div>
             ))
           ))}
       </div>

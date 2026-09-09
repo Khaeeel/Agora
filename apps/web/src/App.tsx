@@ -11,6 +11,7 @@ import { Participants } from "./components/Participants.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { AgentEditor } from "./components/AgentEditor.tsx";
 import { NewRoom } from "./components/NewRoom.tsx";
+import { Av } from "./components/bits.tsx";
 
 /** null = closed, "new" = create, an Agent = edit that one. */
 type AgentModal = null | "new" | Agent;
@@ -21,10 +22,25 @@ export function App() {
   const [agentModal, setAgentModal] = useState<AgentModal>(null);
   const [showRoom, setShowRoom] = useState(false);
   /** What a "Message" button dropped into the composer, with a nonce so the same agent twice still fires. */
-  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  const [prefill] = useState<{ text: string; nonce: number } | null>(null);
+  /** The agent whose private thread is open, or null when a crew room is. */
+  const [dmAgentId, setDmAgentId] = useState<string | null>(null);
+
+  const openThread = async (agent: Agent): Promise<void> => {
+    const id = await openDm(agent.id);
+    if (!id) return;
+    setDmAgentId(agent.id);
+    setRoomId(id);
+    setView("chatroom");
+  };
+  const selectRoom = (id: string): void => {
+    setDmAgentId(null);
+    setRoomId(id);
+  };
 
   const {
     state,
+    openDm,
     broadcast,
     stop,
     resume,
@@ -41,7 +57,10 @@ export function App() {
   useEffect(() => {
     if (state.rooms.length === 0) return;
     const stillExists = roomId !== null && state.rooms.some((r) => r.id === roomId);
-    if (!stillExists) setRoomId(state.rooms[0]!.id);
+    if (!stillExists) {
+      const first = state.rooms.find((r) => !r.name.startsWith("dm:")) ?? state.rooms[0]!;
+      setRoomId(first.id);
+    }
   }, [roomId, state.rooms]);
 
   // Rate-limit flashes clear themselves so they don't stick forever.
@@ -57,6 +76,8 @@ export function App() {
   );
   const room = state.rooms.find((r) => r.id === roomId) ?? null;
   const busy = state.run?.active === true;
+  const dmAgent = dmAgentId ? (agentMap.get(dmAgentId) ?? null) : null;
+  const crewRooms = state.rooms.filter((r) => !r.name.startsWith("dm:"));
 
   const activeGoal =
     state.goals.find((g) => g.id === state.run?.goalId) ??
@@ -78,15 +99,17 @@ export function App() {
   return (
     <div className="shell">
       <Rail
-        rooms={state.rooms}
+        rooms={crewRooms}
         agents={state.agents}
         statuses={state.statuses}
         activeRoomId={roomId}
         connected={state.connected}
-        onSelectRoom={setRoomId}
+        onSelectRoom={selectRoom}
         onNewRoom={() => setShowRoom(true)}
         onNewAgent={() => setAgentModal("new")}
         onEditAgent={(a) => setAgentModal(a)}
+        onOpenDm={(a) => void openThread(a)}
+        dmAgentId={dmAgentId}
         onReconnect={reconnect}
         view={view}
         onSelectView={setView}
@@ -98,26 +121,40 @@ export function App() {
       />
 
       <main className="main">
-        <header className="rhead">
-          <h2>
-            <span className="hash">#</span>
-            <span>
-              {view === "dashboard" ? "Dashboard" : view === "workflow" ? "Workflow" : (room?.name ?? "No room selected")}
-            </span>
-          </h2>
-          <div className="topic">
-            {view === "dashboard"
-              ? "Everything the team holds in memory, across every room"
-              : view === "workflow"
-                ? room
-                  ? `Goals set in ${room.name}, and how far each one got`
-                  : "Pick a room to see its goals"
-                : room
-                  ? room.topic || room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
-                  : "Create a room to get started"}
-          </div>
-          <button className="headbtn" onClick={() => setAgentModal("new")}>Add agent</button>
-        </header>
+        {dmAgent && view === "chatroom" ? (
+          <header className="rhead dmhead">
+            <Av agent={dmAgent} size={34} />
+            <h2>
+              <span style={{ color: dmAgent.color }}>{dmAgent.name}</span>
+              <span className="role">{dmAgent.role}</span>
+            </h2>
+            <div className="topic">
+              Private message · only {dmAgent.name} reads this · {state.statuses[dmAgent.id] === "processing" ? "writing…" : "online"}
+            </div>
+            <button className="headbtn" onClick={() => setAgentModal(dmAgent)}>Edit agent</button>
+          </header>
+        ) : (
+          <header className="rhead">
+            <h2>
+              <span className="hash">#</span>
+              <span>
+                {view === "dashboard" ? "Dashboard" : view === "workflow" ? "Workflow" : (room?.name ?? "No room selected")}
+              </span>
+            </h2>
+            <div className="topic">
+              {view === "dashboard"
+                ? "Everything the team holds in memory, across every room"
+                : view === "workflow"
+                  ? room
+                    ? `Goals set in ${room.name}, and how far each one got`
+                    : "Pick a room to see its goals"
+                  : room
+                    ? room.topic || room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
+                    : "Create a room to get started"}
+            </div>
+            <button className="headbtn" onClick={() => setAgentModal("new")}>Add agent</button>
+          </header>
+        )}
 
         {!state.notifyLive && (
           <p className="banner">
@@ -145,7 +182,7 @@ export function App() {
           <RunBar run={state.run} agents={agentMap} onStop={stop} />
         )}
 
-        {view === "chatroom" && activeGoal && activeGoal.status === "active" && (
+        {view === "chatroom" && !dmAgent && activeGoal && activeGoal.status === "active" && (
           <PlanStrip
             goal={activeGoal}
             agents={agentMap}
@@ -177,6 +214,7 @@ export function App() {
               agents={agentMap}
               onAnswer={answer}
               busy={busy}
+              dm={dmAgent !== null}
             />
             <Composer
               roomName={room?.name ?? "room"}
@@ -185,6 +223,7 @@ export function App() {
               busy={busy}
               onSend={broadcast}
               prefill={prefill}
+              dmAgent={dmAgent}
             />
           </>
         )}
@@ -197,7 +236,7 @@ export function App() {
         memory={state.memory}
         onNewRoom={() => setShowRoom(true)}
         onEditAgent={(a) => setAgentModal(a)}
-        onMessage={(a) => setPrefill({ text: `@${a.id} `, nonce: Date.now() })}
+        onMessage={(a) => void openThread(a)}
         mindStone={state.mindStone}
         compacting={state.run?.phase === "compacting"}
       />

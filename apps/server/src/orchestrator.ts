@@ -2579,7 +2579,13 @@ export class Orchestrator {
       return;
     }
 
-    this.post({ roomId, authorId: "human", kind: "human", text: `@${agent.id} ${humanText}` });
+    const privateThread = room.name.startsWith("dm:");
+    this.post({
+      roomId,
+      authorId: "human",
+      kind: "human",
+      text: privateThread ? humanText : `@${agent.id} ${humanText}`,
+    });
 
     const asksToLook = LOOK_WORDS.test(humanText);
     if (asksToLook) {
@@ -2636,7 +2642,9 @@ export class Orchestrator {
           renderTranscript(listMessages(roomId, config.transcriptWindow), agents) || "(empty)",
           "---",
           "",
-          `Dominic messaged YOU directly, not the room:`,
+          privateThread
+            ? `This is your private thread with Dominic — nobody else reads it. He wrote:`
+            : `Dominic messaged YOU directly, not the room:`,
           "---",
           humanText,
           "---",
@@ -2680,10 +2688,13 @@ export class Orchestrator {
           durationMs: reply.durationMs,
           promptSha: reply.promptSha,
         });
-        const answer = withRoles(`💬 ${agent.name} → Dominic:\n\n${guarded.text.slice(0, 1500)}`, roster);
-        void notify(roomId, answer, { force: true, kind: "chatter" }).then((r) => {
-          this.post({ roomId, authorId: "system", kind: "notify", text: answer, delivered: r.delivered });
-        });
+        // A private thread stays on the screen it was typed on.
+        if (!privateThread) {
+          const answer = withRoles(`💬 ${agent.name} → Dominic:\n\n${guarded.text.slice(0, 1500)}`, roster);
+          void notify(roomId, answer, { force: true, kind: "chatter" }).then((r) => {
+            this.post({ roomId, authorId: "system", kind: "notify", text: answer, delivered: r.delivered });
+          });
+        }
       } else {
         this.post({ roomId, authorId: "system", kind: "notice", text: `${agent.name} returned nothing.` });
       }

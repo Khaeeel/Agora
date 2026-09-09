@@ -10,6 +10,8 @@ interface Props {
   onAnswer: (messageId: string, label: string) => void;
   /** A run holds the room, so a decision cannot start another one yet. */
   busy: boolean;
+  /** A private thread: human bubbles sit on the right, no "direct message" tag. */
+  dm?: boolean;
 }
 
 /** Consecutive messages from one author collapse under a single header. */
@@ -145,7 +147,7 @@ function Ask({ m, onAnswer, disabled }: { m: Message; onAnswer: (id: string, lab
   );
 }
 
-export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
+export function Transcript({ messages, live, agents, onAnswer, busy, dm = false }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -155,7 +157,7 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
   let lastDay = "";
 
   return (
-    <div className="stream" role="log" aria-live="polite" aria-relevant="additions">
+    <div className={`stream${dm ? " dmstream" : ""}`} role="log" aria-live="polite" aria-relevant="additions">
       {messages.map((m, i) => {
         const day = new Date(m.createdAt).toDateString();
         const today = new Date().toDateString();
@@ -215,7 +217,7 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
 
         return (
           <div key={m.id}>{daybar}
-            <div className={`msg${tight ? " tight" : ""}`}>
+            <div className={`msg${tight ? " tight" : ""}${dm && human ? " mine" : ""}`}>
               <Av name={name} color={color} size={32} />
               <div className="body">
                 {!tight && (
@@ -224,7 +226,7 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
                     {!human && agent && <span className="role">{agent.role}</span>}
                     <span className="time">{clock(m.createdAt)}</span>
                     {director && <span className="directed">← {director.name} asked</span>}
-                    {m.directedBy === "human" && <span className="directed">← direct message</span>}
+                    {m.directedBy === "human" && !dm && <span className="directed">← direct message</span>}
                     {m.durationMs != null && <span className="took">{fmtDuration(m.durationMs)}</span>}
                   </div>
                 )}

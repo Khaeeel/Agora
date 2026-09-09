@@ -354,6 +354,15 @@ export function useAgora(roomId: string | null) {
     setState((s) => ({ ...s, rateLimit: null }));
   }, []);
 
+  /** The private thread with one agent — created on first open. Returns its room id. */
+  const openDm = useCallback(async (agentId: string): Promise<string | null> => {
+    const res = await fetch(`/api/dm/${encodeURIComponent(agentId)}`, { method: "POST" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { room: Room };
+    setState((s) => (s.rooms.some((r) => r.id === data.room.id) ? s : { ...s, rooms: [...s.rooms, data.room] }));
+    return data.room.id;
+  }, []);
+
   const refreshRooms = useCallback(async (): Promise<void> => {
     const res = await fetch("/api/state");
     const data = (await res.json()) as { rooms: Room[]; agents: Agent[] };
@@ -362,6 +371,7 @@ export function useAgora(roomId: string | null) {
 
   return {
     state,
+    openDm,
     broadcast,
     stop,
     resume,

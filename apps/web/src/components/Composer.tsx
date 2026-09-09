@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { Agent } from "../lib/types.ts";
 
 /**
  * Typing is NEVER blocked — only sending is.
@@ -15,6 +16,7 @@ export function Composer({
   busy,
   onSend,
   prefill,
+  dmAgent,
 }: {
   roomName: string;
   hasRoom: boolean;
@@ -23,6 +25,8 @@ export function Composer({
   onSend: (text: string) => void;
   /** Text to drop into the box from elsewhere — a "Message" button on an agent. */
   prefill?: { text: string; nonce: number } | null;
+  /** Set when this composer belongs to a private thread: sends go to this agent, no "@" needed. */
+  dmAgent?: Agent | null;
 }) {
   const [text, setText] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
@@ -78,7 +82,7 @@ export function Composer({
     if (areaRef.current) areaRef.current.style.height = "auto";
   };
 
-  const direct = text.trimStart().startsWith("@");
+  const direct = dmAgent ? true : text.trimStart().startsWith("@");
 
   return (
     <>
@@ -89,7 +93,7 @@ export function Composer({
             className="cinput"
             rows={1}
             value={text}
-            placeholder={hasRoom ? "Broadcast to the room, or @name one agent" : "Pick a room to start a goal…"}
+            placeholder={dmAgent ? `Message ${dmAgent.name}…` : hasRoom ? "Broadcast to the room, or @name one agent" : "Pick a room to start a goal…"}
             aria-label={`Broadcast to ${roomName}`}
             onChange={(e) => {
               setText(e.target.value);
@@ -119,9 +123,11 @@ export function Composer({
         <span><b>Enter</b> send</span>
         <span><b>Shift+Enter</b> new line</span>
         <span>
-          {direct
-            ? "Direct message: only that agent answers, no planning."
-            : <>The orchestrator picks who answers unless you <b>@name</b> someone.</>}
+          {dmAgent
+            ? `Private thread with ${dmAgent.name} — no planning, nothing goes to WhatsApp.`
+            : direct
+              ? "Direct message: only that agent answers, no planning."
+              : <>The orchestrator picks who answers unless you <b>@name</b> someone.</>}
         </span>
       </div>
     </>
