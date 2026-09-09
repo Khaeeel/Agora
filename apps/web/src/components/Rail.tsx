@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Agent, AgentStatus, Room, RunState } from "../lib/types.ts";
-import { Avatar, StatusDot } from "./bits.tsx";
+import { Av } from "./bits.tsx";
 
 export type View = "dashboard" | "workflow" | "chatroom";
 
@@ -23,6 +23,8 @@ interface Props {
   /** Live runs across rooms. */
   runs: RunState[];
   agentsById: Map<string, Agent>;
+  /** Rooms whose latest goal has a blocked step — the amber pin. */
+  blockedRooms?: Set<string>;
 }
 
 const PHASE_SHORT: Record<string, string> = {
@@ -31,6 +33,26 @@ const PHASE_SHORT: Record<string, string> = {
   waiting_slot: "waiting",
   generating: "writing",
   rate_limited: "rate-limited",
+  compacting: "folding",
+};
+
+const Icon = {
+  dashboard: (
+    <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </svg>
+  ),
+  workflow: (
+    <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" />
+    </svg>
+  ),
+  chatroom: (
+    <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5.2A8 8 0 1 1 21 12z" />
+    </svg>
+  ),
 };
 
 export function Rail({
@@ -50,152 +72,103 @@ export function Rail({
   goalRunning,
   runs,
   agentsById,
+  blockedRooms,
 }: Props) {
-  const [tab, setTab] = useState<"chats" | "agents">("chats");
+  const [tab, setTab] = useState<"rooms" | "agents">("rooms");
   const [query, setQuery] = useState("");
 
   const needle = query.trim().toLowerCase();
-  const shownRooms = rooms.filter(
-    (r) => !needle || r.name.toLowerCase().includes(needle),
-  );
+  const shownRooms = rooms.filter((r) => !needle || r.name.toLowerCase().includes(needle));
   const shownAgents = agents.filter(
-    (a) =>
-      !needle ||
-      a.name.toLowerCase().includes(needle) ||
-      a.role.toLowerCase().includes(needle),
+    (a) => !needle || a.name.toLowerCase().includes(needle) || a.role.toLowerCase().includes(needle),
   );
-
-  const byId = new Map(agents.map((a) => [a.id, a]));
   const busy = agents.filter((a) => statuses[a.id] === "processing").length;
   const liveRuns = runs.filter((r) => r.active);
-  const roomName = (id: string) => rooms.find((r) => r.id === id)?.name ?? id;
 
   return (
     <nav className="rail" aria-label="Rooms and agents">
-      <div className="rail__head">
-        <span className="rail__mark" aria-hidden="true">
-          ✦
-        </span>
-        <span>
-          <span className="rail__title">
-            Ago<i>ra</i>
-          </span>
-          <br />
-          <span className="rail__sub">Agent Workspace</span>
-        </span>
+      <div className="brand">
+        <div className="mark">
+          <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.4 6.2L21 10l-5.4 2.6L14 19l-2-4.6L7 17l2.2-5.4L4 9l6.1-.6z" /></svg>
+        </div>
+        <div>
+          <h1>AGORA</h1>
+          <p>Agent workspace</p>
+        </div>
         <button
-          className="rail__new"
-          onClick={tab === "chats" ? onNewRoom : onNewAgent}
-          title={tab === "chats" ? "New room" : "New agent"}
-          aria-label={tab === "chats" ? "New room" : "New agent"}
+          className="newbtn"
+          onClick={tab === "rooms" ? onNewRoom : onNewAgent}
+          title={tab === "rooms" ? "New room" : "New agent"}
+          aria-label={tab === "rooms" ? "New room" : "New agent"}
         >
           +
         </button>
       </div>
 
-      <div className="nav">
-        <button
-          className="nav__item"
-          aria-current={view === "dashboard"}
-          onClick={() => onSelectView("dashboard")}
-        >
-          <span className="nav__icon" aria-hidden="true">
-            ◉
-          </span>
-          Dashboard
+      <div className="cnav">
+        <button className={view === "dashboard" ? "on" : ""} onClick={() => onSelectView("dashboard")}>
+          {Icon.dashboard}Dashboard
         </button>
-        <button
-          className="nav__item"
-          aria-current={view === "workflow"}
-          onClick={() => onSelectView("workflow")}
-        >
-          <span className="nav__icon" aria-hidden="true">
-            ◷
-          </span>
-          Workflow
-          {openSteps > 0 && (
-            <span className={`nav__count${goalRunning ? " nav__count--live" : ""}`}>
-              {openSteps}
-            </span>
-          )}
+        <button className={view === "workflow" ? "on" : ""} onClick={() => onSelectView("workflow")}>
+          {Icon.workflow}Workflow
+          {openSteps > 0 && <span className={`count${goalRunning ? " live" : ""}`}>{openSteps}</span>}
         </button>
-        <button
-          className="nav__item"
-          aria-current={view === "chatroom"}
-          onClick={() => onSelectView("chatroom")}
-        >
-          <span className="nav__icon" aria-hidden="true">
-            ▣
-          </span>
-          Chatroom
+        <button className={view === "chatroom" ? "on" : ""} onClick={() => onSelectView("chatroom")}>
+          {Icon.chatroom}Chatroom
         </button>
       </div>
 
-      <input
-        className="rail__search"
-        placeholder="Search agents & rooms"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        aria-label="Search agents and rooms"
-      />
-
-      <div className="tabs" role="tablist">
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "chats"}
-          onClick={() => setTab("chats")}
-        >
-          Chats
+      <div className="searchwrap">
+        <input
+          className="search"
+          placeholder="Search rooms and agents"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search rooms and agents"
+        />
+      </div>
+      <div className="ctabs" role="tablist">
+        <button className={`ctab${tab === "rooms" ? " on" : ""}`} role="tab" aria-selected={tab === "rooms"} onClick={() => setTab("rooms")}>
+          Rooms
         </button>
-        <button
-          className="tab"
-          role="tab"
-          aria-selected={tab === "agents"}
-          onClick={() => setTab("agents")}
-        >
+        <button className={`ctab${tab === "agents" ? " on" : ""}`} role="tab" aria-selected={tab === "agents"} onClick={() => setTab("agents")}>
           Agents
         </button>
       </div>
 
-      <div className="rail__list">
-        {tab === "chats" &&
+      <div className="rooms">
+        {tab === "rooms" && <div className="grouplabel">Active crews</div>}
+        {tab === "rooms" &&
           (shownRooms.length === 0 ? (
             <p className="rail__empty">No rooms yet. Press + to make one.</p>
           ) : (
             shownRooms.map((room) => {
-              const roomRun = liveRuns.find((r) => r.roomId === room.id);
-              const speaker = roomRun?.speaking
-                ? agentsById.get(roomRun.speaking)?.name
-                : null;
+              const run = liveRuns.find((r) => r.roomId === room.id);
+              const speaker = run?.speaking ? agentsById.get(run.speaking)?.name : null;
+              const snippet = run
+                ? `${speaker ?? "run"} · ${PHASE_SHORT[run.phase ?? ""] ?? "live"} · t${run.turn}`
+                : room.topic || room.members.map((id) => agentsById.get(id)?.name ?? id).join(", ");
               return (
                 <button
                   key={room.id}
-                  className="roomitem"
-                  aria-current={room.id === activeRoomId}
+                  className={`room-item${room.id === activeRoomId ? " on" : ""}`}
                   onClick={() => onSelectRoom(room.id)}
                 >
-                  <span className="roomitem__hash" aria-hidden="true">
-                    #
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span className="roomitem__name">{room.name}</span>
-                    <br />
-                    <span className="roomitem__last">
-                      {roomRun
-                        ? `${speaker ?? "run"} · ${PHASE_SHORT[roomRun.phase ?? ""] ?? "live"} · t${roomRun.turn}`
-                        : room.members
-                            .map((id) => byId.get(id)?.name ?? id)
-                            .join(", ")}
+                  <div className="room-top">
+                    <span className="hash">#</span>
+                    <span className="room-name">{room.name}</span>
+                    {blockedRooms?.has(room.id) && <span className="blockedpin" title="A step is blocked" />}
+                    {run && <span className="pulse" title="Run active" />}
+                    <span className="unread" title={`${room.members.length} agents`}>{room.members.length}</span>
+                  </div>
+                  <div className="room-bottom">
+                    <span className="stack">
+                      {room.members.slice(0, 4).map((id) => (
+                        <Av key={id} agent={agentsById.get(id)} name={agentsById.get(id)?.name ?? id} size={19} />
+                      ))}
                     </span>
-                  </span>
-                  <span className="roomitem__meta">
-                    {roomRun ? (
-                      <span className="roomitem__live" title="Run active" />
-                    ) : (
-                      room.members.length
-                    )}
-                  </span>
+                    <span className="snippet">{snippet}</span>
+                  </div>
                 </button>
               );
             })
@@ -206,66 +179,33 @@ export function Rail({
             <p className="rail__empty">No agents match.</p>
           ) : (
             shownAgents.map((agent) => (
-              <button
-                className="agentitem"
-                key={agent.id}
-                onClick={() => onEditAgent(agent)}
-                title={`Edit ${agent.name}`}
-              >
-                <Avatar agent={agent} size={30} />
+              <button className="agent-item" key={agent.id} onClick={() => onEditAgent(agent)} title={`Edit ${agent.name}`}>
+                <Av agent={agent} size={26} />
                 <span style={{ minWidth: 0 }}>
-                  <span className="agentitem__name">{agent.name}</span>
-                  <br />
-                  <span className="agentitem__role">{agent.role}</span>
+                  <span className="aname" style={{ color: agent.color }}>{agent.name}</span>
+                  <span className="astate">{agent.role}</span>
                 </span>
-                <StatusDot status={statuses[agent.id] ?? "idle"} />
+                <span className={`sdot ${statuses[agent.id] === "processing" ? "working" : "idle"}`} style={{ position: "static", marginLeft: "auto" }} />
               </button>
             ))
           ))}
       </div>
 
-      {liveRuns.length > 0 && (
-        <div className="activity" aria-label="Live runs">
-          <div className="activity__label">Live</div>
-          {liveRuns.map((r) => {
-            const speaker = r.speaking ? agentsById.get(r.speaking)?.name : null;
-            return (
-              <button
-                key={r.roomId}
-                className="activity__row"
-                onClick={() => onSelectRoom(r.roomId)}
-                title={`${roomName(r.roomId)} — turn ${r.turn}/${r.maxTurns}`}
-              >
-                <span className="activity__room">{roomName(r.roomId)}</span>
-                <span className="activity__meta">
-                  {speaker ?? "—"} · turn {r.turn}
-                </span>
-              </button>
-            );
-          })}
+      <div className="controller">
+        <div className="bolt">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6z" /></svg>
         </div>
-      )}
-
-      <div className="rail__foot">
-        <span className="rail__mark" style={{ width: 28, height: 28, fontSize: 13 }}>
-          ⚡
-        </span>
-        <span style={{ minWidth: 0 }}>
-          <span className="rail__foot-label">System Controller</span>
-          <br />
+        <div style={{ minWidth: 0 }}>
+          <b>System controller</b>
           {connected ? (
-            <span className="rail__foot-sub">
+            <span>
               {agents.length} agents · {busy} working
-              {liveRuns.length > 0
-                ? ` · ${liveRuns.length} run${liveRuns.length === 1 ? "" : "s"}`
-                : ""}
+              {liveRuns.length > 0 ? ` · ${liveRuns.length} run${liveRuns.length === 1 ? "" : "s"}` : ""}
             </span>
           ) : (
-            <button className="rail__retry" onClick={onReconnect}>
-              Disconnected — retry now
-            </button>
+            <button className="retry" onClick={onReconnect}>Disconnected — retry now</button>
           )}
-        </span>
+        </div>
       </div>
     </nav>
   );

@@ -65,6 +65,15 @@ export function App() {
   const openSteps =
     activeGoal?.steps.filter((s) => s.status !== "done" && s.status !== "skipped")
       .length ?? 0;
+  // The amber pin on a room: its latest goal has a blocked step. Only the
+  // selected room's goals are loaded, so the pin is exact for it and absent
+  // for the others until you open them.
+  const blockedRooms = useMemo(() => {
+    const s = new Set<string>();
+    const latest = state.goals[0];
+    if (roomId && latest && latest.steps.some((st) => st.status === "blocked")) s.add(roomId);
+    return s;
+  }, [roomId, state.goals]);
 
   return (
     <div className="shell">
@@ -85,39 +94,29 @@ export function App() {
         goalRunning={busy}
         runs={state.runs}
         agentsById={agentMap}
+        blockedRooms={blockedRooms}
       />
 
       <main className="main">
-        <header className="topbar">
-          <span className="topbar__hash" aria-hidden="true">
-            #
-          </span>
-          <span>
-            <span className="topbar__name">
-              {view === "dashboard"
-                ? "Dashboard"
-                : view === "workflow"
-                  ? "Workflow"
-                  : (room?.name ?? "No room selected")}
+        <header className="rhead">
+          <h2>
+            <span className="hash">#</span>
+            <span>
+              {view === "dashboard" ? "Dashboard" : view === "workflow" ? "Workflow" : (room?.name ?? "No room selected")}
             </span>
-            <br />
-            <span className="topbar__sub">
-              {view === "dashboard"
-                ? "Everything the team holds in memory, across every room"
-                : view === "workflow"
-                  ? room
-                    ? `Goals set in ${room.name}, and how far each one got`
-                    : "Pick a room to see its goals"
-                  : room
-                    ? room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
-                    : "Create a room to get started"}
-            </span>
-          </span>
-          <span className="topbar__right">
-            <button className="ghostbtn" onClick={() => setAgentModal("new")}>
-              New agent
-            </button>
-          </span>
+          </h2>
+          <div className="topic">
+            {view === "dashboard"
+              ? "Everything the team holds in memory, across every room"
+              : view === "workflow"
+                ? room
+                  ? `Goals set in ${room.name}, and how far each one got`
+                  : "Pick a room to see its goals"
+                : room
+                  ? room.topic || room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
+                  : "Create a room to get started"}
+          </div>
+          <button className="headbtn" onClick={() => setAgentModal("new")}>Add agent</button>
         </header>
 
         {!state.notifyLive && (

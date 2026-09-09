@@ -1,7 +1,7 @@
 import type { Agent, AgentMemory, AgentStatus, MindStone, Room } from "../lib/types.ts";
 import { MindStonePanel } from "./MindStone.tsx";
 import { GymScene } from "./GymScene.tsx";
-import { StatusLegend } from "./bits.tsx";
+import { Av } from "./bits.tsx";
 
 export function Participants({
   room,
@@ -34,7 +34,7 @@ export function Participants({
   return (
     <aside className="participants" aria-label="Participants">
       <div className="participants__head">
-        <div className="participants__title">Gym Floor</div>
+        <div className="participants__title">Gym floor</div>
         <div className="participants__count">
           {members.length} {members.length === 1 ? "agent" : "agents"}
           {lifting > 0 && <span className="participants__lifting"> · {lifting} lifting</span>}
@@ -51,31 +51,23 @@ export function Participants({
       />
 
       {room && members.length > 0 && (
-        <div className="dmlist" aria-label="Message an agent">
-          <div className="participants__title" style={{ marginTop: 12 }}>Message an agent</div>
+        <div className="agents" aria-label="Agents in this room">
           {members.map((id) => {
             const a = agents.get(id);
             if (!a) return null;
-            const lifting = statuses[id] === "processing";
+            const working = statuses[id] === "processing";
             return (
-              <div
-                key={id}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}
-              >
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  <strong>{a.name}</strong>
-                  <span className="chip" style={{ marginLeft: 6 }}>{a.role}</span>
-                </span>
-                <button
-                  className="chip"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => onMessage(a)}
-                  title={lifting ? `${a.name} is mid-turn; the message sends once the room is free` : `Message ${a.name} directly — no planning, only ${a.name} answers`}
-                >
-                  Message
+              <div className="arow" key={id}>
+                <button className="mav" onClick={() => onEditAgent(a)} title={`Edit ${a.name}`}>
+                  <Av agent={a} size={28} />
+                  <span className={`sdot ${working ? "working" : "idle"}`} />
                 </button>
-                <button className="chip" style={{ cursor: "pointer" }} onClick={() => onEditAgent(a)} title={`Edit ${a.name}`}>
-                  Edit
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span className="aname" style={{ color: a.color }}>{a.name}</span>
+                  <span className="astate">{a.role} · {working ? "writing" : "idle"}</span>
+                </span>
+                <button className="amsg" onClick={() => onMessage(a)} title={`Message ${a.name} directly — no planning, only ${a.name} answers`}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5.2A8 8 0 1 1 21 12z" /></svg>
                 </button>
               </div>
             );
@@ -91,13 +83,7 @@ export function Participants({
         />
       )}
 
-      <StatusLegend />
-
-      <div className="participants__foot">
-        <button className="primarybtn" onClick={onNewRoom}>
-          New Room
-        </button>
-      </div>
+      <button className="newroom" onClick={onNewRoom}>New room</button>
     </aside>
   );
 }

@@ -47,8 +47,6 @@ export function Composer({
         ? "A run is in progress. It'll send when the room is free."
         : null;
 
-  // Drafts survive a reload; a dropped connection should not cost you a
-  // paragraph you already typed.
   useEffect(() => {
     try {
       const saved = localStorage.getItem("agora-draft");
@@ -80,56 +78,52 @@ export function Composer({
     if (areaRef.current) areaRef.current.style.height = "auto";
   };
 
+  const direct = text.trimStart().startsWith("@");
+
   return (
-    <div className="composer">
-      <div className="composer__box">
-        <textarea
-          ref={areaRef}
-          className="composer__input"
-          rows={1}
-          value={text}
-          placeholder={
-            hasRoom ? `Broadcast to ${roomName}…` : "Pick a room to start a goal…"
-          }
-          aria-label={`Broadcast to ${roomName}`}
-          onChange={(e) => {
-            setText(e.target.value);
-            e.target.style.height = "auto";
-            e.target.style.height = `${Math.min(160, e.target.scrollHeight)}px`;
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <button
-          className="composer__send"
-          onClick={submit}
-          disabled={!text.trim()}
-          title={blocked ?? "Send"}
-          aria-label="Send"
-        >
-          ➤
-        </button>
+    <>
+      <div className="composer">
+        <div className="cbox">
+          <textarea
+            ref={areaRef}
+            className="cinput"
+            rows={1}
+            value={text}
+            placeholder={hasRoom ? "Broadcast to the room, or @name one agent" : "Pick a room to start a goal…"}
+            aria-label={`Broadcast to ${roomName}`}
+            onChange={(e) => {
+              setText(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(140, e.target.scrollHeight)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+          <div className="ctools">
+            {flash ? (
+              <span className="flash">{flash}</span>
+            ) : blocked && text.trim() ? (
+              <span className="blockedhint">{blocked}</span>
+            ) : null}
+            <button className="send" onClick={submit} disabled={!text.trim()} title={blocked ?? "Send"} aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+            </button>
+          </div>
+        </div>
       </div>
-      <p className="composer__hint">
-        {flash ? (
-          <span className="composer__flash">{flash}</span>
-        ) : blocked ? (
-          <span className="composer__blocked">{blocked}</span>
-        ) : (
-          <>
-            <span>Enter to send · Shift+Enter for a new line</span>
-            <span>
-              {text.trimStart().startsWith("@")
-                ? "Direct message: only that agent answers, no planning."
-                : "The orchestrator decides who answers · @name to message one agent directly."}
-            </span>
-          </>
-        )}
-      </p>
-    </div>
+      <div className="chint">
+        <span><b>Enter</b> send</span>
+        <span><b>Shift+Enter</b> new line</span>
+        <span>
+          {direct
+            ? "Direct message: only that agent answers, no planning."
+            : <>The orchestrator picks who answers unless you <b>@name</b> someone.</>}
+        </span>
+      </div>
+    </>
   );
 }

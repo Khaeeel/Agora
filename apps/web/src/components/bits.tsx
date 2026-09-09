@@ -1,5 +1,25 @@
 import type { Agent, AgentStatus } from "../lib/types.ts";
 
+/** Two-letter initials on the agent's colour — the mockup's `.av`. */
+export function Av({ agent, name, color, size = 32 }: { agent?: Agent | undefined; name?: string; color?: string; size?: number }) {
+  const label = name ?? agent?.name ?? "?";
+  const initials = label
+    .split(/\s+/)
+    .map((w) => w[0] ?? "")
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return (
+    <span
+      className="av"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.38), background: color ?? agent?.color ?? "var(--faint)" }}
+      aria-hidden="true"
+    >
+      {initials}
+    </span>
+  );
+}
+
 export function Avatar({
   agent,
   size = 32,
