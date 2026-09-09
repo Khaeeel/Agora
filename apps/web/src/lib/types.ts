@@ -1,5 +1,13 @@
 export type AgentStatus = "active" | "processing" | "idle" | "offline";
-export type MessageKind = "human" | "agent" | "notice" | "notify" | "handoff";
+/** One option on a question the room is putting to Dominic. */
+export interface Choice {
+  /** What the button says. Short — it is the decision, not the reasoning. */
+  label: string;
+  /** One line under it: what picking this actually means. */
+  detail: string;
+}
+
+export type MessageKind = "human" | "agent" | "notice" | "notify" | "handoff" | "event";
 
 export interface Agent {
   id: string;
@@ -13,6 +21,8 @@ export interface Agent {
   effort: string;
   tools: string[];
   addDirs: string[];
+  mcp: string[];
+  allow: string[];
   orchestrator: boolean;
   file: string;
 }
@@ -26,7 +36,12 @@ export interface Message {
   directedBy: string | null;
   createdAt: number;
   costUsd: number | null;
+  durationMs: number | null;
   delivered: boolean | null;
+  /** Options to click, when this message asks Dominic to decide. */
+  choices: Choice[] | null;
+  /** The label he picked, once he has. Null while the question is open. */
+  answeredWith: string | null;
 }
 
 export interface Room {
@@ -36,6 +51,28 @@ export interface Room {
   members: string[];
   orchestratorId: string;
   createdAt: number;
+}
+
+/** A room's compacted long-term memory — what survives past the transcript window. */
+export interface MindStone {
+  roomId: string;
+  content: string;
+  /** created_at of the newest message folded in. */
+  coveredTo: number;
+  /** How many messages the stone has absorbed in total. */
+  messages: number;
+  updatedAt: number;
+  revisions: number;
+}
+
+/**
+ * How much an agent has said in a room, for its whole life — not just the
+ * 500-message window the transcript ships. Server-computed on purpose: counting
+ * from `messages` would make an agent shrink once the room outgrew the window.
+ */
+export interface AgentMemory {
+  messages: number;
+  chars: number;
 }
 
 export type GoalStatus = "active" | "done" | "stopped";
@@ -67,6 +104,15 @@ export interface Goal {
   steps: Step[];
 }
 
+export type RunPhase =
+  | "planning"
+  | "deciding"
+  | "waiting_slot"
+  | "generating"
+  | "rate_limited"
+  /** Folding the room transcript into its mind stone after a run. */
+  | "compacting";
+
 export interface RunState {
   roomId: string;
   active: boolean;
@@ -77,6 +123,12 @@ export interface RunState {
   costUsd: number;
   stopReason: string | null;
   goalId: string | null;
+  phase: RunPhase | null;
+  phaseDetail: string | null;
+  timeoutMs: number;
+  turnStartedAt: number | null;
+  lastTurnMs: number | null;
+  lastTurnCostUsd: number | null;
 }
 
 export type ServerEvent =
@@ -84,11 +136,15 @@ export type ServerEvent =
   | { type: "agents"; agents: Agent[] }
   | { type: "rooms"; rooms: Room[] }
   | { type: "message"; message: Message }
+  /** An existing message changed in place — a question got answered. */
+  | { type: "message_update"; message: Message }
   | { type: "turn_start"; roomId: string; agentId: string; directedBy: string | null; turn: number }
   | { type: "delta"; roomId: string; agentId: string; text: string }
   | { type: "turn_end"; roomId: string; agentId: string }
   | { type: "run"; state: RunState }
+  | { type: "runs"; runs: RunState[] }
   | { type: "goal"; goal: Goal }
+  | { type: "mind_stone"; roomId: string; stone: MindStone }
   | { type: "status"; statuses: Record<string, AgentStatus> }
   | { type: "rate_limit"; roomId: string; detail: string }
   | { type: "error"; roomId: string | null; detail: string };

@@ -2,24 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { Agent } from "./lib/types.ts";
 import { useAgora } from "./lib/store.ts";
 import { Rail, type View } from "./components/Rail.tsx";
+import { Dashboard } from "./components/Dashboard.tsx";
 import { Workflow } from "./components/Workflow.tsx";
 import { Transcript } from "./components/Transcript.tsx";
 import { RunBar } from "./components/RunBar.tsx";
+import { PlanStrip } from "./components/PlanStrip.tsx";
 import { Participants } from "./components/Participants.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { AgentEditor } from "./components/AgentEditor.tsx";
 import { NewRoom } from "./components/NewRoom.tsx";
-
-type Theme = "light" | "dark";
-
-function initialTheme(): Theme | null {
-  try {
-    const saved = localStorage.getItem("agora-theme");
-    return saved === "light" || saved === "dark" ? saved : null;
-  } catch {
-    return null;
-  }
-}
 
 /** null = closed, "new" = create, an Agent = edit that one. */
 type AgentModal = null | "new" | Agent;
@@ -29,9 +20,18 @@ export function App() {
   const [view, setView] = useState<View>("chatroom");
   const [agentModal, setAgentModal] = useState<AgentModal>(null);
   const [showRoom, setShowRoom] = useState(false);
-  const [theme, setTheme] = useState<Theme | null>(initialTheme);
 
-  const { state, broadcast, stop, refreshRooms } = useAgora(roomId);
+  const {
+    state,
+    broadcast,
+    stop,
+    resume,
+    answer,
+    refreshRooms,
+    reconnect,
+    clearError,
+    clearRateLimit,
+  } = useAgora(roomId);
 
   // Pick a room once the socket says what exists — and recover if the room we
   // were holding no longer does (it was deleted, or the database was reset),
@@ -42,19 +42,12 @@ export function App() {
     if (!stillExists) setRoomId(state.rooms[0]!.id);
   }, [roomId, state.rooms]);
 
+  // Rate-limit flashes clear themselves so they don't stick forever.
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme) {
-      root.setAttribute("data-theme", theme);
-      try {
-        localStorage.setItem("agora-theme", theme);
-      } catch {
-        /* private mode — the OS preference still applies */
-      }
-    } else {
-      root.removeAttribute("data-theme");
-    }
-  }, [theme]);
+    if (!state.rateLimit) return;
+    const t = setTimeout(() => clearRateLimit(), 8000);
+    return () => clearTimeout(t);
+  }, [state.rateLimit, clearRateLimit]);
 
   const agentMap = useMemo(
     () => new Map(state.agents.map((a) => [a.id, a])),
@@ -83,15 +76,13 @@ export function App() {
         onNewRoom={() => setShowRoom(true)}
         onNewAgent={() => setAgentModal("new")}
         onEditAgent={(a) => setAgentModal(a)}
+        onReconnect={reconnect}
         view={view}
         onSelectView={setView}
         openSteps={openSteps}
         goalRunning={busy}
-        onToggleTheme={() =>
-          setTheme((t) =>
-            t === "dark" ? "light" : t === "light" ? null : "dark",
-          )
-        }
+        runs={state.runs}
+        agentsById={agentMap}
       />
 
       <main className="main">
@@ -101,17 +92,23 @@ export function App() {
           </span>
           <span>
             <span className="topbar__name">
-              {view === "workflow" ? "Workflow" : (room?.name ?? "No room selected")}
+              {view === "dashboard"
+                ? "Dashboard"
+                : view === "workflow"
+                  ? "Workflow"
+                  : (room?.name ?? "No room selected")}
             </span>
             <br />
             <span className="topbar__sub">
-              {view === "workflow"
-                ? room
-                  ? `Goals set in ${room.name}, and how far each one got`
-                  : "Pick a room to see its goals"
-                : room
-                  ? room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
-                  : "Create a room to get started"}
+              {view === "dashboard"
+                ? "Everything the team holds in memory, across every room"
+                : view === "workflow"
+                  ? room
+                    ? `Goals set in ${room.name}, and how far each one got`
+                    : "Pick a room to see its goals"
+                  : room
+                    ? room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
+                    : "Create a room to get started"}
             </span>
           </span>
           <span className="topbar__right">
@@ -128,16 +125,48 @@ export function App() {
           </p>
         )}
 
+        {state.error && (
+          <p className="banner banner--error" role="alert">
+            <span style={{ flex: 1 }}>{state.error}</span>
+            <button className="banner__dismiss" onClick={clearError} aria-label="Dismiss">
+              Dismiss
+            </button>
+          </p>
+        )}
+
+        {state.rateLimit && (
+          <p className="banner banner--warn" role="status">
+            Rate limited — {state.rateLimit}
+          </p>
+        )}
+
         {state.run && state.run.active && (
           <RunBar run={state.run} agents={agentMap} onStop={stop} />
         )}
 
-        {view === "workflow" ? (
+        {view === "chatroom" && activeGoal && activeGoal.status === "active" && (
+          <PlanStrip
+            goal={activeGoal}
+            agents={agentMap}
+            onOpenWorkflow={() => setView("workflow")}
+          />
+        )}
+
+        {view === "dashboard" ? (
+          <Dashboard
+            agents={agentMap}
+            runs={state.runs}
+            connected={state.connected}
+          />
+        ) : view === "workflow" ? (
           <Workflow
             goals={state.goals}
             agents={agentMap}
             activeGoalId={state.run?.goalId ?? null}
             roomName={room?.name ?? "the"}
+            running={busy}
+            onStop={stop}
+            onResume={resume}
           />
         ) : (
           <>
@@ -145,10 +174,13 @@ export function App() {
               messages={state.messages}
               live={state.live}
               agents={agentMap}
+              onAnswer={answer}
+              busy={busy}
             />
             <Composer
               roomName={room?.name ?? "room"}
-              disabled={!room || !state.connected}
+              hasRoom={room !== null}
+              connected={state.connected}
               busy={busy}
               onSend={broadcast}
             />
@@ -160,8 +192,11 @@ export function App() {
         room={room}
         agents={agentMap}
         statuses={state.statuses}
+        memory={state.memory}
         onNewRoom={() => setShowRoom(true)}
         onEditAgent={(a) => setAgentModal(a)}
+        mindStone={state.mindStone}
+        compacting={state.run?.phase === "compacting"}
       />
 
       {agentModal && (

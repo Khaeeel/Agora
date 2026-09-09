@@ -1,123 +1,125 @@
 /*
- * Agora tokens — "oxblood + parchment".
+ * Agora tokens — "HUD command core".
  *
- * Theme has THREE states, not two: an explicit choice stamps data-theme on
- * <html>, and the default "system" setting stamps nothing, where only
- * prefers-color-scheme separates light from dark. So: the full light palette
- * lives on bare :root, and both dark blocks redefine ONLY tokens. No component
- * may declare a colour inside a media or [data-theme] block.
+ * ONE theme, deliberately. The ground is void-black, violet is the primary
+ * signal and cyan the secondary; amber, rose and lime carry status only.
+ * There is no light variant and no toggle: the scanline ground, the corner
+ * brackets and the accent glow all assume a dark surface, and inverting them
+ * reads as a rendering bug rather than a mode.
+ *
+ * Because there is one theme, every token lives on bare :root and nowhere
+ * else — no media block, no [data-theme] block. The old rule still stands
+ * though: no component may write a colour literal. If a shade is missing
+ * here, add it here.
+ *
+ * Two vocabularies sit side by side below. The HUD names (--void, --edge,
+ * --violet) are the palette. The Agora names (--surface, --hairline,
+ * --accent) are what the 3,000 lines of app.css already ask for, and they
+ * are defined in terms of the first set. Change a HUD value and the whole
+ * app follows.
  */
 
 :root {
-  /* Tells the browser which way to render native widgets — dropdown popups,
-     scrollbars, date pickers. Without it a dark page gets light-mode controls. */
-  color-scheme: light;
-
-  /* rail — the deep maroon sidebar */
-  --rail: #4a2124;
-  --rail-raised: #5c2b2e;
-  --rail-hairline: #613034;
-  --rail-ink: #f4e8e5;
-  --rail-muted: #b9968f;
-
-  /* transcript — the chat ground is warm cream; panels sit white above it */
-  --canvas: #f7f3ee;
-  --surface: #ffffff;
-  --raised: #f2ece4;
-  --hairline: #eae2d8;
-  --hairline-strong: #ddd2c4;
-
-  /* text — warm neutrals biased toward the accent, never pure grey */
-  --ink: #2b2422;
-  --ink-soft: #574c46;
-  --muted: #8b7d75;
-
-  /* accent */
-  --accent: #c4544c;
-  --accent-hover: #ab433c;
-  --accent-ink: #ffffff;
-  --accent-wash: #f8e9e6;
-
-  /* semantic status — deliberately separate from the accent hue */
-  --ok: #3fa96a;
-  --warn: #e09a2e;
-  --info: #5a7fa8;
-  --off: #a39a94;
-
-  --shadow-card: 0 1px 2px rgb(42 26 24 / 0.05), 0 8px 24px -14px rgb(42 26 24 / 0.16);
-  --shadow-pop: 0 8px 32px -8px rgb(42 26 24 / 0.28);
-
-  --radius: 10px;
-  --radius-sm: 6px;
-
-  --font-ui: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-
-    --rail: #1f1214;
-    --rail-raised: #331e21;
-    --rail-hairline: #40272a;
-    --rail-ink: #f0e2de;
-    --rail-muted: #a88a84;
-
-    --canvas: #191412;
-    --surface: #231c19;
-    --raised: #2c2320;
-    --hairline: #3a2e2a;
-    --hairline-strong: #4a3a35;
-
-    --ink: #f2e8dd;
-    --ink-soft: #d3c3b6;
-    --muted: #a2927f;
-
-    --accent: #d96a63;
-    --accent-hover: #e88079;
-    --accent-ink: #1a0f0e;
-    --accent-wash: #38211f;
-
-    --ok: #6bbf8a;
-    --warn: #dfab52;
-    --info: #7ea3cc;
-    --off: #7d7671;
-
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -14px rgb(0 0 0 / 0.6);
-    --shadow-pop: 0 8px 32px -8px rgb(0 0 0 / 0.7);
-  }
-}
-
-:root[data-theme="dark"] {
+  /* Native widgets — dropdown popups, scrollbars, date pickers — are painted
+     by the OS, and without this they arrive in light mode on a black page. */
   color-scheme: dark;
 
-  --rail: #1f1214;
-  --rail-raised: #331e21;
-  --rail-hairline: #40272a;
-  --rail-ink: #f0e2de;
-  --rail-muted: #a88a84;
+  /* ── the palette ─────────────────────────────────────────────────────── */
 
-  --canvas: #191412;
-  --surface: #231c19;
-  --raised: #2c2320;
-  --hairline: #3a2e2a;
-  --hairline-strong: #4a3a35;
+  /* ground: void is the page, the two panels are what sits on it */
+  --void: #06080f;
+  --panel: #0b0f1c;
+  --panel-2: #0f1526;
+  --edge: #1c2438;
+  --edge-hot: #2e3a57;
 
-  --ink: #f2e8dd;
-  --ink-soft: #d3c3b6;
-  --muted: #a2927f;
+  /* signal: violet leads, cyan answers, the rest are status and nothing else */
+  /* Published as channels as well as hex. Every alpha wash of the accent
+     needs the triplet — rgb() cannot take an alpha of a hex custom property —
+     and without these the washes get retyped by hand and stop following the
+     palette, which is the one thing this file promises. */
+  --violet-rgb: 167 139 250;
+  --cyan-rgb: 103 232 249;
 
-  --accent: #d96a63;
-  --accent-hover: #e88079;
-  --accent-ink: #1a0f0e;
-  --accent-wash: #38211f;
+  --violet: rgb(var(--violet-rgb));
+  --violet-dim: #6d5baa;
+  --cyan: rgb(var(--cyan-rgb));
+  --amber: #fbbf24;
+  --rose: #fb7185;
+  --lime: #86efac;
 
-  --ok: #6bbf8a;
-  --warn: #dfab52;
-  --info: #7ea3cc;
-  --off: #7d7671;
+  /* text: three steps, never pure white — #fff on this ground glares */
+  --text: #dce3f2;
+  --text-2: #8c97b4;
+  --text-3: #59627c;
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -14px rgb(0 0 0 / 0.6);
-  --shadow-pop: 0 8px 32px -8px rgb(0 0 0 / 0.7);
+  /* ── mapped to what app.css asks for ─────────────────────────────────── */
+
+  /* rail — the sidebar sits BELOW the void so it reads as chrome, not content */
+  --rail: #080b14;
+  --rail-raised: #151d31;
+  --rail-hairline: var(--edge);
+  --rail-ink: var(--text);
+  --rail-muted: #7b87a6;
+
+  /* transcript ground and the surfaces above it */
+  --canvas: var(--void);
+  --surface: var(--panel);
+  --raised: var(--panel-2);
+  --hairline: var(--edge);
+  --hairline-strong: var(--edge-hot);
+
+  --ink: var(--text);
+  --ink-soft: var(--text-2);
+  --muted: var(--text-3);
+
+  /* accent — violet is LIGHT, so anything sitting on it takes dark ink */
+  --accent: var(--violet);
+  --accent-hover: #c4b1ff;
+  --accent-ink: #0a0714;
+  --accent-wash: #1a1b32;
+
+  /* semantic status — a different hue from the accent on purpose, so "this
+     succeeded" never reads as "this is selected" */
+  --ok: var(--lime);
+  --warn: var(--amber);
+  --info: var(--cyan);
+  --off: var(--text-3);
+  --danger: var(--rose);
+
+  /* Status fills are light. Text placed on them must be dark or it vanishes —
+     this is the pair the old palette got away with because its greens and
+     ambers were mid-tones. */
+  --ok-ink: #04160c;
+  --warn-ink: #2a1a08;
+  --info-ink: #04161a;
+  --danger-ink: #2a0910;
+
+  /* Avatars carry a per-agent colour from the database, which is saturated
+     mid-tone by construction. White initials are the only thing that reads
+     across all of them. */
+  --avatar-ink: #ffffff;
+
+  /* Depth on a void ground comes from the border and the glow, not the drop
+     shadow — a black shadow on black is invisible. */
+  --shadow-card:
+    inset 0 1px 0 rgb(255 255 255 / 0.025),
+    0 10px 30px -18px rgb(0 0 0 / 0.9);
+  --shadow-pop:
+    0 24px 64px -24px rgb(0 0 0 / 0.85),
+    0 0 0 1px var(--edge-hot);
+  --glow: 0 0 22px rgb(var(--violet-rgb) / 0.34);
+  --glow-cyan: 0 0 18px rgb(var(--cyan-rgb) / 0.3);
+
+  /* Sharp corners. The HUD's whole read is machined edges, and 10px rounds
+     soften it back into a consumer chat app. */
+  --radius: 3px;
+  --radius-sm: 2px;
+
+  /* The tracking on every uppercase micro-label. One token so they stay in
+     step — they read as a system only if they all track identically. */
+  --track: 0.18em;
+
+  --font-ui: "Chakra Petch", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }

@@ -3,6 +3,7 @@ import { join, basename } from "node:path";
 import { parse as parseYaml } from "yaml";
 import chokidar from "chokidar";
 import { config } from "../config.ts";
+import { protocolText } from "../protocol.ts";
 import type { Agent } from "../types.ts";
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -49,26 +50,61 @@ export function parseAgentFile(path: string): Agent {
     instructions: s.get("instructions") ?? "",
     personality: s.get("personality") ?? "",
     color: typeof meta["color"] === "string" ? meta["color"] : "#7A6A5D",
-    model: typeof meta["model"] === "string" ? meta["model"] : config.model,
-    effort: typeof meta["effort"] === "string" ? meta["effort"] : config.effort,
+    // REPORT WHAT ACTUALLY RUNS, not what the file asks for. On the cursor
+    // driver with a pinned model (the default, "auto"), the per-agent model:
+    // and effort: lines are ignored entirely — Cursor has no haiku at all and
+    // bakes effort into the model id. Passing the frontmatter value through
+    // would leave every agent card claiming claude-opus-5 while Composer did
+    // the work, which is the same misattribution the room is not allowed to
+    // make about its own runs. When cursorModel is blank the fallback DOES
+    // translate the agent's own model, so the file's value is honest again.
+    model:
+      config.driver === "cursor" && config.cursorModel.trim()
+        ? config.cursorModel.trim()
+        : typeof meta["model"] === "string"
+          ? meta["model"]
+          : config.model,
+    effort:
+      config.driver === "cursor" && config.cursorModel.trim()
+        ? "n/a"
+        : typeof meta["effort"] === "string"
+          ? meta["effort"]
+          : config.effort,
     tools: asStringArray(meta["tools"]),
     addDirs: asStringArray(meta["add_dirs"]),
     mcp: asStringArray(meta["mcp"]),
+    allow: asStringArray(meta["allow"]),
+    // Resolved against the project root so an agent file stays portable.
+    mcpConfigs: asStringArray(meta["mcp_configs"]).map((p) =>
+      p.startsWith("/") ? p : join(config.root, p),
+    ),
     orchestrator: meta["orchestrator"] === true,
     file: path,
   };
 }
 
 /**
- * Shared plumbing every agent loads — environment facts, standing rules, the
- * ticket format. Kept in one file so it cannot drift across six prompts.
- * Underscore-prefixed so it is never mistaken for an agent.
+ * Per-room rules, layered on top of the house rules.
+ *
+ * The house file carries how to behave in a room; this one carries what the
+ * room is ABOUT - paths, protocol, the traps specific to that project. Without
+ * the split, every agent in every room is told helloalex2 is "the main repo",
+ * which is wrong the moment a second room exists.
+ *
+ * Keyed off the slugified room name, so `Voicemail Detection` reads
+ * `_rules-voicemail-detection.md`. That keeps the file hand-editable and
+ * greppable rather than naming it after a UUID, and needs no schema change.
+ * The cost: RENAMING A ROOM SILENTLY ORPHANS ITS RULES FILE. Rename the file
+ * to match, or the room quietly loses its project context.
+ *
+ * Absent file = empty string, the normal case for a room that needs nothing
+ * beyond the house rules.
  */
-export const HOUSE_RULES_FILE = "_house-rules.md";
-
-export function loadHouseRules(): string {
+export function loadRoomRules(roomName: string): string {
+  const slug = slugify(roomName);
+  if (!slug) return "";
   try {
-    return readFileSync(join(config.agentsDir, HOUSE_RULES_FILE), "utf8").trim();
+    return readFileSync(join(config.agentsDir, `_rules-${slug}.md`), "utf8").trim();
   } catch {
     return "";
   }
@@ -111,6 +147,8 @@ export function renderAgentFile(a: {
   orchestrator?: boolean;
   tools?: string[];
   addDirs?: string[];
+  mcp?: string[];
+  allow?: string[];
 }): string {
   const lines = [
     "---",
@@ -125,6 +163,15 @@ export function renderAgentFile(a: {
   lines.push(`tools: [${tools.map((t) => JSON.stringify(t)).join(", ")}]`);
   if (a.addDirs?.length) {
     lines.push(`add_dirs: [${a.addDirs.map((d) => JSON.stringify(d)).join(", ")}]`);
+  }
+  // Round-trip capability grants. Omitting these meant saving an agent from the
+  // UI silently revoked its browser access and web permissions — the edit looked
+  // like a model change and was quietly a downgrade.
+  if (a.mcp?.length) {
+    lines.push(`mcp: [${a.mcp.map((m) => JSON.stringify(m)).join(", ")}]`);
+  }
+  if (a.allow?.length) {
+    lines.push(`allow: [${a.allow.map((p) => JSON.stringify(p)).join(", ")}]`);
   }
   lines.push("---", "");
   lines.push(`# Agent: ${a.name}`, "");
@@ -227,20 +274,30 @@ function qaCredentials(): string {
  * The system prompt handed to `claude -p --system-prompt`. Built from the .md
  * so editing the file is the only way to change how an agent behaves.
  */
-export function buildSystemPrompt(agent: Agent, roomName: string, roster: Agent[]): string {
+export function buildSystemPrompt(
+  agent: Agent,
+  roomName: string,
+  roster: Agent[],
+  opts: { chatTurn?: boolean } = {},
+): string {
   const others = roster
     .filter((a) => a.id !== agent.id)
     .map((a) => `- ${a.name} (${a.id}) — ${a.role}`)
     .join("\n");
 
-  const house = loadHouseRules();
+  const roomRules = loadRoomRules(roomName);
 
   return [
     `You are ${agent.name}, the ${agent.role} in a multi-agent room called "${roomName}".`,
     "",
-    // Shared house rules come first so they are a stable cache prefix and so a
-    // role can never quietly contradict them.
-    house && `${house}\n`,
+    // L0 comes first: byte-identical for every agent in every room, so it is a
+    // stable cache prefix, and nothing below it can quietly contradict it.
+    // Emitted from protocol.ts rather than read from a file — see the note there
+    // on why this is a contract and not a convention.
+    `${protocolText()}\n`,
+    // L2 — room rules sit AFTER the protocol so the shared text stays a stable
+    // cache prefix across every room.
+    roomRules && `${roomRules}\n`,
     // The description IS the agent's skill set — editing it is how you change
     // what this agent is able to do, so it is stated as capability, not bio.
     agent.description &&
@@ -259,8 +316,26 @@ export function buildSystemPrompt(agent: Agent, roomName: string, roster: Agent[
     "",
     // Without this, agents invent capabilities they do not have ("I only have a
     // browser") instead of stating the gap accurately.
-    "## What you can actually do right now",
-    agent.tools.length === 0 && agent.mcp.length === 0
+    // A chat turn switches tools off for ONE reply. Saying "you have no tools"
+    // here was a real bug: the agent concluded the ROOM had no tools and told
+    // Dominic the room could not write code or train — while Berlin, Tokyo and
+    // Rio were holding exactly those grants. Off for this turn is not the same
+    // as absent, and the prompt now says so.
+    opts.chatTurn
+      ? [
+          "## This turn is a conversation, not a task",
+          "Dominic asked you directly, so your tools are switched OFF for this one",
+          "reply. Answer from what you already know.",
+          "",
+          "That is NOT the same as the room being unable to act. The room's",
+          "capabilities are exactly as described above and have not changed. Never",
+          "tell Dominic the room cannot do something it can — if the answer needs",
+          "work, say what you would do and that he only has to ask for it.",
+          "The one thing you must not do is claim you looked anything up this turn,",
+          "because you did not.",
+        ].join("\n")
+      : "## What you can actually do right now",
+    !opts.chatTurn && agent.tools.length === 0 && agent.mcp.length === 0
       ? [
           "You have NO tools in this room. No filesystem, no terminal, no browser,",
           "no network, no ability to run anything. You can only read this",
@@ -271,6 +346,8 @@ export function buildSystemPrompt(agent: Agent, roomName: string, roster: Agent[
           "is needed and who could get it. Reasoning from what is already in this",
           "room is your entire job here.",
         ].join("\n")
+      : opts.chatTurn
+      ? ""
       : `Tools available to you: ${agent.tools.join(", ") || "(none built-in)"}.` +
         (agent.addDirs.length
           ? ` You may read under: ${agent.addDirs.join(", ")}.`

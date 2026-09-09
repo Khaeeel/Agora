@@ -14,8 +14,13 @@ export interface AgentDraft {
   model: string;
   effort: string;
   orchestrator: boolean;
+  /* Capabilities are not editable in this form, but they MUST round-trip.
+     Dropping them here silently revoked an agent's repo and browser access on
+     save — an edit that looked like a model change and was a downgrade. */
   tools: string[];
   addDirs: string[];
+  mcp: string[];
+  allow: string[];
 }
 
 const EMPTY: AgentDraft = {
@@ -30,6 +35,8 @@ const EMPTY: AgentDraft = {
   orchestrator: false,
   tools: [],
   addDirs: [],
+  mcp: [],
+  allow: [],
 };
 
 function fromAgent(a: Agent): AgentDraft {
@@ -45,6 +52,8 @@ function fromAgent(a: Agent): AgentDraft {
     orchestrator: a.orchestrator,
     tools: a.tools,
     addDirs: a.addDirs,
+    mcp: a.mcp,
+    allow: a.allow,
   };
 }
 
@@ -276,10 +285,16 @@ export function AgentEditor({
                 Can direct a room (orchestrator)
               </label>
 
-              {draft.tools.length > 0 && (
+              {(draft.tools.length > 0 ||
+                draft.mcp.length > 0 ||
+                draft.allow.length > 0) && (
                 <p className="field__hint">
-                  Tools granted in the file: {draft.tools.join(", ")}. Edit the
-                  markdown directly to change these.
+                  Capabilities from the file — kept as-is when you save, edit the
+                  markdown to change them:
+                  {draft.tools.length > 0 && ` tools ${draft.tools.join(", ")};`}
+                  {draft.mcp.length > 0 && ` mcp ${draft.mcp.join(", ")};`}
+                  {draft.allow.length > 0 && ` allow ${draft.allow.join(", ")};`}
+                  {draft.addDirs.length > 0 && ` reads ${draft.addDirs.join(", ")}`}
                 </p>
               )}
 

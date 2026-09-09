@@ -25,6 +25,8 @@ for await (const event of driver.run({
   tools: [],
   addDirs: [],
   mcp: [],
+  allow: [],
+  mcpConfigs: [],
   signal: controller.signal,
 })) {
   if (event.type === "delta") {
@@ -39,7 +41,6 @@ console.log(`\n\nchecks
   streamed chars   ${streamed.length}
   final text chars ${final?.text.length ?? 0}
   isError          ${final?.isError}
-  cost             $${final?.costUsd?.toFixed(4) ?? "?"}
   wall clock       ${((Date.now() - started) / 1000).toFixed(1)}s
 `);
 

@@ -1,22 +1,66 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+/**
+ * Typing is NEVER blocked — only sending is.
+ *
+ * The textarea used to be disabled whenever the socket dropped or a run was in
+ * progress, which meant a one-second reconnect blip silently swallowed
+ * keystrokes and an active run stopped you drafting the next thing at all.
+ * Losing what someone typed is a worse failure than letting them queue it.
+ */
 export function Composer({
   roomName,
-  disabled,
+  hasRoom,
+  connected,
   busy,
   onSend,
 }: {
   roomName: string;
-  disabled: boolean;
+  hasRoom: boolean;
+  connected: boolean;
   busy: boolean;
   onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [flash, setFlash] = useState<string | null>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  const blocked = !hasRoom
+    ? "No room selected."
+    : !connected
+      ? "Reconnecting — your message is kept and will send once it's back."
+      : busy
+        ? "A run is in progress. It'll send when the room is free."
+        : null;
+
+  // Drafts survive a reload; a dropped connection should not cost you a
+  // paragraph you already typed.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("agora-draft");
+      if (saved) setText(saved);
+    } catch {
+      /* private mode — drafts just won't persist */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (text) localStorage.setItem("agora-draft", text);
+      else localStorage.removeItem("agora-draft");
+    } catch {
+      /* ignore */
+    }
+  }, [text]);
 
   const submit = (): void => {
     const trimmed = text.trim();
-    if (!trimmed || disabled || busy) return;
+    if (!trimmed) return;
+    if (blocked) {
+      setFlash(blocked);
+      setTimeout(() => setFlash(null), 2600);
+      return;
+    }
     onSend(trimmed);
     setText("");
     if (areaRef.current) areaRef.current.style.height = "auto";
@@ -30,8 +74,9 @@ export function Composer({
           className="composer__input"
           rows={1}
           value={text}
-          placeholder={busy ? "A run is in progress…" : `Broadcast to ${roomName}…`}
-          disabled={disabled || busy}
+          placeholder={
+            hasRoom ? `Broadcast to ${roomName}…` : "Pick a room to start a goal…"
+          }
           aria-label={`Broadcast to ${roomName}`}
           onChange={(e) => {
             setText(e.target.value);
@@ -48,15 +93,24 @@ export function Composer({
         <button
           className="composer__send"
           onClick={submit}
-          disabled={disabled || busy || !text.trim()}
+          disabled={!text.trim()}
+          title={blocked ?? "Send"}
           aria-label="Send"
         >
           ➤
         </button>
       </div>
       <p className="composer__hint">
-        <span>Enter to send · Shift+Enter for a new line</span>
-        <span>The orchestrator decides who answers.</span>
+        {flash ? (
+          <span className="composer__flash">{flash}</span>
+        ) : blocked ? (
+          <span className="composer__blocked">{blocked}</span>
+        ) : (
+          <>
+            <span>Enter to send · Shift+Enter for a new line</span>
+            <span>The orchestrator decides who answers.</span>
+          </>
+        )}
       </p>
     </div>
   );

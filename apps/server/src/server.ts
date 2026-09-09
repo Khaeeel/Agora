@@ -2,12 +2,23 @@ import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import { config, notifyIsLive } from "./config.ts";
-import { createRoom, listGoals, listMessages, listRooms } from "./db.ts";
+import {
+  agentMemory,
+  answerChoice,
+  createRoom,
+  getMindStone,
+  getStats,
+  listGoals,
+  listMessages,
+  listRooms,
+} from "./db.ts";
 import { loadAgents, renderAgentFile, watchAgents, writeAgentFile } from "./agents/registry.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import type { Agent, AgentStatus, ClientCommand, ServerEvent } from "./types.ts";
 
-export async function buildServer() {
+export async function buildServer(): Promise<
+  Awaited<ReturnType<typeof Fastify>> & { orchestrator: Orchestrator }
+> {
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
   await app.register(websocket);
@@ -62,11 +73,23 @@ export async function buildServer() {
   app.get<{ Params: { id: string } }>("/api/rooms/:id/messages", async (req) => ({
     messages: listMessages(req.params.id),
     run: orchestrator.getState(req.params.id),
+    // Rides along with the transcript rather than sitting behind its own fetch:
+    // the client needs both at the same moment, on room select.
+    mindStone: getMindStone(req.params.id),
+    // Same reasoning, and it must be server-side: the transcript above is capped
+    // at 500 messages, so the panel cannot count this for itself.
+    memory: agentMemory(req.params.id),
+  }));
+
+  app.get<{ Params: { id: string } }>("/api/rooms/:id/mind-stone", async (req) => ({
+    stone: getMindStone(req.params.id),
   }));
 
   app.get<{ Params: { id: string } }>("/api/rooms/:id/goals", async (req) => ({
     goals: listGoals(req.params.id),
   }));
+
+  app.get("/api/stats", async () => getStats());
 
   app.post<{
     Body: { name?: string; topic?: string; members?: string[]; orchestratorId?: string };
@@ -104,6 +127,8 @@ export async function buildServer() {
     orchestrator?: boolean;
     tools?: string[];
     addDirs?: string[];
+    mcp?: string[];
+    allow?: string[];
   };
 
   function normalize(body: AgentBody) {
@@ -119,6 +144,8 @@ export async function buildServer() {
       orchestrator: body.orchestrator === true,
       tools: Array.isArray(body.tools) ? body.tools : [],
       addDirs: Array.isArray(body.addDirs) ? body.addDirs : [],
+      mcp: Array.isArray(body.mcp) ? body.mcp : [],
+      allow: Array.isArray(body.allow) ? body.allow : [],
     };
   }
 
@@ -193,6 +220,9 @@ export async function buildServer() {
       } satisfies ServerEvent),
     );
     socket.send(JSON.stringify({ type: "status", statuses: statuses() } satisfies ServerEvent));
+    socket.send(
+      JSON.stringify({ type: "runs", runs: orchestrator.listRuns() } satisfies ServerEvent),
+    );
 
     socket.on("message", (raw: Buffer) => {
       let cmd: ClientCommand;
@@ -205,6 +235,24 @@ export async function buildServer() {
       if (cmd.type === "broadcast") {
         if (!cmd.text?.trim()) return;
         void orchestrator.start(cmd.roomId, cmd.text.trim());
+      } else if (cmd.type === "answer") {
+        // Answering IS the unblocking instruction, so it goes in as a normal
+        // human message — the planner already knows how to read the room's own
+        // question above it. Nothing bespoke, and it reads correctly in the
+        // transcript afterwards.
+        const answered = answerChoice(cmd.messageId, cmd.label);
+        if (!answered) {
+          broadcast({
+            type: "error",
+            roomId: cmd.roomId,
+            detail: "That decision was already made.",
+          });
+        } else {
+          broadcast({ type: "message_update", message: answered });
+          void orchestrator.start(cmd.roomId, cmd.label);
+        }
+      } else if (cmd.type === "resume") {
+        void orchestrator.start(cmd.roomId, "", cmd.goalId);
       } else if (cmd.type === "stop") {
         if (!orchestrator.stop(cmd.roomId)) {
           broadcast({ type: "error", roomId: cmd.roomId, detail: "Nothing running." });
@@ -215,5 +263,7 @@ export async function buildServer() {
     socket.on("close", () => sockets.delete(socket));
   });
 
-  return app;
+  // Exposed so boot-time recovery can resume goals the previous process was
+  // still working on. Same object the WebSocket commands drive.
+  return Object.assign(app, { orchestrator });
 }

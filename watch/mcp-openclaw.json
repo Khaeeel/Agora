@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "OpenClaw as an MCP server, so agents can READ WhatsApp conversations.",
+    "",
+    "Passed to the CLI with --mcp-config for agents that declare it, rather than",
+    "being registered globally in ~/.claude.json — a global entry would spawn an",
+    "OpenClaw bridge for every agent turn in every room, including the ones that",
+    "have no business reading chat.",
+    "",
+    "IMPORTANT: this server also exposes messages_send. Never grant",
+    "mcp__openclaw__* — grant the read tools by name, or an agent can post to any",
+    "of Dominic's groups directly, bypassing the per-room routing, the rate",
+    "limiter, and the rule that nobody but Dominic acts.",
+    "",
+    "UNVERIFIED as of 2026-08-25: written while WSL was out of memory and could",
+    "not run anything. Confirm `openclaw mcp serve` starts and that",
+    "messages_read returns the QA group before granting this to an agent."
+  ],
+  "mcpServers": {
+    "openclaw": {
+      "command": "/home/dominickooya/.npm-global/bin/openclaw",
+      "args": ["mcp", "serve"]
+    }
+  }
+}

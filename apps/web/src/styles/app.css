@@ -47,11 +47,11 @@ textarea {
 
 .shell {
   display: grid;
-  grid-template-columns: 268px minmax(0, 1fr) 264px;
+  grid-template-columns: 268px minmax(0, 1fr) 348px;
   height: 100%;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .shell {
     grid-template-columns: 240px minmax(0, 1fr);
   }
@@ -82,7 +82,7 @@ textarea {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: 3px;
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 700;
@@ -107,7 +107,7 @@ textarea {
   width: 30px;
   height: 30px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 3px;
   background: var(--accent);
   color: var(--accent-ink);
   font-size: 18px;
@@ -124,7 +124,7 @@ textarea {
   margin: 0 14px 10px;
   padding: 8px 11px;
   border: 1px solid var(--rail-hairline);
-  border-radius: 8px;
+  border-radius: 3px;
   background: rgb(0 0 0 / 0.16);
   color: var(--rail-ink);
   width: calc(100% - 28px);
@@ -144,7 +144,7 @@ textarea {
   flex: 1;
   padding: 7px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 3px;
   background: transparent;
   color: var(--rail-muted);
   font-size: 13px;
@@ -175,7 +175,7 @@ textarea {
   width: 100%;
   padding: 9px 12px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 3px;
   background: transparent;
   color: var(--rail-muted);
   font: inherit;
@@ -243,7 +243,7 @@ textarea {
   width: 100%;
   padding: 9px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 3px;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -263,7 +263,7 @@ textarea {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 3px;
   background: rgb(255 255 255 / 0.08);
   color: var(--rail-ink);
   font-weight: 600;
@@ -299,7 +299,7 @@ textarea {
   width: 100%;
   padding: 8px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 3px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -338,6 +338,23 @@ textarea {
   color: var(--rail-muted);
 }
 
+/* Disconnected is actionable, not just a label you wait out. */
+.rail__retry {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.rail__retry:hover {
+  color: var(--accent-hover);
+}
+
 .iconbtn {
   margin-left: auto;
   border: 0;
@@ -345,7 +362,7 @@ textarea {
   color: var(--rail-muted);
   cursor: pointer;
   padding: 6px;
-  border-radius: 7px;
+  border-radius: 3px;
 }
 
 .iconbtn:hover {
@@ -359,7 +376,7 @@ textarea {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #fff;
+  color: var(--avatar-ink);
   font-weight: 600;
   flex: none;
   position: relative;
@@ -429,7 +446,7 @@ textarea {
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: 3px;
   background: var(--accent-wash);
   color: var(--accent);
   font-weight: 700;
@@ -457,7 +474,7 @@ textarea {
   border: 1px solid var(--hairline-strong);
   background: var(--surface);
   color: var(--ink-soft);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 6px 11px;
   font-size: 13px;
   cursor: pointer;
@@ -473,26 +490,45 @@ textarea {
 .runbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   padding: 8px 20px;
   background: var(--accent-wash);
   border-bottom: 1px solid var(--hairline);
   font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.runbar--warn {
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+}
+
+.runbar__tracks {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 60px;
 }
 
 .runbar__track {
-  flex: 1;
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
   overflow: hidden;
-  min-width: 60px;
+}
+
+.runbar__track--time {
+  background: color-mix(in srgb, var(--muted) 28%, transparent);
 }
 
 .runbar__fill {
   height: 100%;
   background: var(--accent);
   transition: width 0.3s ease;
+}
+
+.runbar__fill--time {
+  background: color-mix(in srgb, var(--ink-soft) 55%, transparent);
 }
 
 .runbar__stat {
@@ -502,19 +538,273 @@ textarea {
   white-space: nowrap;
 }
 
+.runbar__stat--muted {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.runbar__sep {
+  margin: 0 3px;
+  color: var(--muted);
+}
+
+.runbar__phase {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  padding: 2px 8px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.runbar__phase--waiting_slot,
+.runbar__phase--rate_limited {
+  background: color-mix(in srgb, var(--warn) 22%, transparent);
+  color: var(--ink);
+}
+
 .runbar__stop {
   border: 1px solid var(--accent);
   background: var(--accent);
   color: var(--accent-ink);
-  border-radius: 7px;
+  border-radius: 3px;
   padding: 4px 12px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  margin-left: auto;
 }
 
 .runbar__stop:hover {
   background: var(--accent-hover);
+}
+
+/* ── live plan strip ───────────────────────────────────────────────────── */
+
+.planstrip {
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.planstrip__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.planstrip__head:hover .planstrip__title {
+  color: var(--accent);
+}
+
+.planstrip__title {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planstrip__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+  flex: none;
+}
+
+.planstrip__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.planstrip__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--hairline);
+  background: var(--raised);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.planstrip__step--done {
+  opacity: 0.65;
+}
+
+.planstrip__step--active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline));
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.planstrip__step--blocked {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--hairline));
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+}
+
+.planstrip__mark {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+  flex: none;
+}
+
+.planstrip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planstrip__num {
+  font-family: var(--font-mono);
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+.planstrip__focus {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.planstrip__focus-tag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  flex: none;
+}
+
+.planstrip__focus-tag--blocked {
+  color: var(--warn);
+}
+
+/* ── monitoring events in transcript ───────────────────────────────────── */
+
+.event {
+  align-self: center;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--ink-soft);
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.event__mark {
+  color: var(--accent);
+  font-size: 11px;
+  flex: none;
+}
+
+.turnmeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── cross-room activity ───────────────────────────────────────────────── */
+
+.activity {
+  padding: 10px 12px;
+  border-top: 1px solid var(--rail-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.activity__label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rail-muted);
+  margin-bottom: 2px;
+}
+
+.activity__row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.04);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity__row:hover {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.activity__room {
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity__meta {
+  font-size: 11px;
+  color: var(--rail-muted);
+  font-family: var(--font-mono);
+}
+
+.roomitem__live {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  animation: pulse-live 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 /* ── transcript ────────────────────────────────────────────────────────── */
@@ -573,7 +863,7 @@ textarea {
 
 .chip {
   border: 0;
-  border-radius: 5px;
+  border-radius: 2px;
   padding: 2px 7px;
   font-size: 11px;
   font-weight: 500;
@@ -599,7 +889,7 @@ textarea {
 .bubble {
   background: var(--surface);
   border: 1px solid var(--hairline);
-  border-radius: 16px;
+  border-radius: 3px;
   padding: 10px 15px;
   box-shadow: var(--shadow-card);
   max-width: 70ch;
@@ -676,8 +966,818 @@ textarea {
 }
 
 .notify__body {
+  display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* A delivered report is collapsed to its one-line label — the same text is
+   already on his phone, and showing it twice made the room hard to scan.
+   The body is still here, one click down, because the transcript is the
+   record of what was actually sent. */
+.notify__fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+}
+
+.notify__fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.notify__fold > summary::after {
+  content: "show";
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+
+.notify__fold[open] > summary::after {
+  content: "hide";
+}
+
+.notify__fold[open] > .notify__body {
+  margin-top: 6px;
+}
+
+/* ── dashboard ─────────────────────────────────────────────────────────── */
+
+.dash {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.dash__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 24px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── the fleet ─────────────────────────────────────────────────────────── */
+
+.fleet {
+  position: relative;
+  padding: 4px 4px 0;
+}
+
+.fleet--off {
+  opacity: 0.5;
+  filter: grayscale(0.6);
+}
+
+/* Each room is its own block: header, then the orchestrator as a hub, then its
+   members fanning below on drawn links. Every agent carries its own canvas, so
+   no brain depends on measuring anything outside its own card. */
+.team {
+  position: relative;
+  margin-bottom: clamp(28px, 4vw, 52px);
+}
+
+.team:last-child {
+  margin-bottom: 8px;
+}
+
+.team__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.team__swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.team__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.team__links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+.team__links path {
+  fill: none;
+  stroke: var(--hairline-strong);
+  stroke-width: 1.2;
+  stroke-opacity: 0.35;
+  transition:
+    stroke-opacity 0.25s,
+    stroke-width 0.25s,
+    stroke 0.25s;
+}
+
+/* A room with a run in flight draws its links in the accent, so you can see
+   which team is thinking from across the page. */
+.team--busy .team__links path {
+  stroke: var(--accent);
+}
+
+.team__busy {
+  display: inline-block;
+  margin-right: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  animation: teamworking 1.6s ease-in-out infinite;
+}
+
+@keyframes teamworking {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.team__hub {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+
+.team__members {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: clamp(14px, 2vw, 24px) clamp(6px, 1.2vw, 14px);
+  margin-top: 58px;
+}
+
+.agentcard {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  padding: 6px 6px 16px;
+  border-radius: 3px;
+  transition:
+    background 0.25s ease,
+    transform 0.25s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.agentcard:hover {
+  background: var(--accent-wash);
+  transform: translateY(-3px);
+}
+
+.agentcard--lead {
+  width: min(230px, 100%);
+}
+
+.agentcard--live {
+  background: var(--accent-wash);
+}
+
+/* Fixed-height stage: the canvas fills it and the brain is sized from the
+   canvas box, so nothing outside the card can push a brain off position. */
+.agentcard__stage {
+  position: relative;
+  width: 100%;
+  height: 128px;
+  display: grid;
+  place-items: end center;
+}
+
+.agentcard--lead .agentcard__stage {
+  height: 156px;
+}
+
+.agentcard__stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.bot {
+  position: relative;
+  width: 60px;
+  display: block;
+  pointer-events: none;
+}
+
+.agentcard--lead .bot {
+  width: 76px;
+}
+
+.agentcard--live .bot {
+  animation: botnod 1.4s ease-in-out infinite;
+}
+
+.agentcard__id {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  margin-top: 8px;
+  text-align: center;
+  width: 100%;
+}
+
+.agentcard__nm {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1.2;
+}
+
+.agentcard--lead .agentcard__nm {
+  font-size: 15px;
+}
+
+.agentcard__role {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.agentcard__mem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.agentcard__mem b {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.agentcard__mem span {
+  font-size: 8.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agentcard__reports {
+  position: absolute;
+  bottom: 0;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: 0.25s;
+  white-space: nowrap;
+}
+
+.agentcard:hover .agentcard__reports {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bot__shell {
+  fill: var(--raised);
+  stroke: var(--hairline-strong);
+  stroke-width: 1.4;
+}
+
+.bot__soft {
+  fill: var(--surface);
+  stroke: var(--hairline-strong);
+  stroke-width: 1.2;
+}
+
+.bot__wire {
+  stroke: var(--muted);
+  stroke-width: 1.3;
+  fill: none;
+  stroke-linecap: round;
+}
+
+.bot__detail {
+  stroke: var(--hairline-strong);
+  stroke-width: 1.3;
+  fill: none;
+  stroke-linecap: round;
+}
+
+.bot__eyes {
+  transition: transform 0.22s ease-out;
+}
+
+.bot__eye {
+  transition: opacity 0.18s ease;
+}
+
+/* Halo is the "awake" tell — dim at rest, bright while the agent speaks. */
+.bot__halo {
+  opacity: 0.13;
+  transition: opacity 0.18s ease;
+}
+
+.fleetbot--lit .bot__halo {
+  opacity: 0.42;
+}
+
+.fleetbot--lit .bot {
+  animation: botnod 1.4s ease-in-out infinite;
+}
+
+@keyframes botnod {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.fleetbot__tag {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  margin-top: 6px;
+  text-align: center;
+}
+
+.fleetbot__name {
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.fleetbot__role {
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.fleetbot__st {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fleetbot__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.fleetbot--lit .fleetbot__dot {
+  opacity: 1;
+}
+
+/* The stage stacks brain over robot; perspective makes the CSS body read as
+   a solid object rather than flat plates. */
+.dash__stage {
+  position: relative;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  perspective: 900px;
+}
+
+.brain {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  margin-bottom: -34px;
+}
+
+.brain__canvas {
+  position: relative;
+  z-index: 2;
+  display: block;
+}
+
+/* A faint containing sphere, so the cloud reads as a head rather than a spill. */
+.brain__ring {
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow:
+    inset 0 0 40px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 0 30px color-mix(in srgb, var(--accent) 7%, transparent);
+  pointer-events: none;
+}
+
+/* ── robot ─────────────────────────────────────────────────────────────── */
+
+.robot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-style: preserve-3d;
+  animation: robotfloat 6s ease-in-out infinite;
+}
+
+@keyframes robotfloat {
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Connects brain to head — the "thinking" is literally wired in. */
+.robot__stem {
+  width: 2px;
+  height: 16px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 60%, transparent),
+    var(--hairline-strong)
+  );
+}
+
+.robot__head {
+  position: relative;
+  width: 92px;
+  height: 72px;
+  border-radius: 22px;
+  background: linear-gradient(160deg, var(--raised), var(--surface));
+  border: 1px solid var(--hairline-strong);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.5),
+    var(--shadow-card);
+  display: grid;
+  place-items: center;
+  transform: rotateX(6deg);
+}
+
+.robot__ear {
+  position: absolute;
+  top: 24px;
+  width: 7px;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--hairline-strong);
+}
+
+.robot__ear--l {
+  left: -8px;
+}
+.robot__ear--r {
+  right: -8px;
+}
+
+.robot__face {
+  display: flex;
+  gap: 16px;
+}
+
+.robot__eye {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 rgb(0 0 0 / 0);
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.robot--idle .robot__eye {
+  background: var(--ok);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ok) 55%, transparent);
+}
+
+.robot--thinking .robot__eye {
+  background: var(--accent);
+  animation: eyethink 1.1s ease-in-out infinite;
+}
+
+.robot--thinking .robot__eye--r {
+  animation-delay: 0.18s;
+}
+
+@keyframes eyethink {
+  50% {
+    box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 80%, transparent);
+    transform: scaleY(0.6);
+  }
+}
+
+.robot--blocked .robot__eye {
+  background: var(--warn);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--warn) 55%, transparent);
+}
+
+.robot--offline .robot__eye {
+  background: var(--off);
+  opacity: 0.5;
+}
+
+.robot__neck {
+  width: 20px;
+  height: 9px;
+  background: var(--hairline-strong);
+}
+
+.robot__body {
+  position: relative;
+  width: 108px;
+  height: 74px;
+  border-radius: 18px 18px 14px 14px;
+  background: linear-gradient(160deg, var(--raised), var(--surface));
+  border: 1px solid var(--hairline-strong);
+  box-shadow:
+    inset 0 2px 0 rgb(255 255 255 / 0.45),
+    var(--shadow-card);
+  display: grid;
+  place-items: center;
+  transform: rotateX(-4deg);
+}
+
+.robot__chest {
+  width: 66px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.robot__chest-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.robot__chest-idle {
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hairline-strong);
+}
+
+.robot__arm {
+  position: absolute;
+  top: 12px;
+  width: 9px;
+  height: 40px;
+  border-radius: 5px;
+  background: var(--raised);
+  border: 1px solid var(--hairline-strong);
+}
+
+.robot__arm--l {
+  left: -13px;
+  transform: rotate(4deg);
+}
+.robot__arm--r {
+  right: -13px;
+  transform: rotate(-4deg);
+}
+
+/* ── readout ───────────────────────────────────────────────────────────── */
+
+.dash__readout {
+  min-width: 0;
+}
+
+.dash__state {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.dash__memcount {
+  font-family: var(--font-mono);
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dash__memlabel {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dash__note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 46ch;
+}
+
+/* ── tiles ─────────────────────────────────────────────────────────────── */
+
+.dash__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.tile {
+  padding: 13px 15px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tile--accent {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.tile__value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.tile__label {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── panels ────────────────────────────────────────────────────────────── */
+
+.dash__cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.dash__panel {
+  padding: 15px 17px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dash__h {
+  margin: 0 0 11px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dash__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.bars,
+.roomstat,
+.recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: 22px minmax(52px, auto) minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.bar__name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar__track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.bar__n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.roomstat li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.roomstat__name {
+  font-weight: 500;
+}
+
+.roomstat__meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.roomstat__live {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 2px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.recent li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  gap: 9px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.recent__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.recent__who {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent__kind,
+.recent__ago {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-mono);
 }
 
 /* ── workflow ──────────────────────────────────────────────────────────── */
@@ -752,7 +1852,7 @@ textarea {
 }
 
 .goal__badge {
-  border-radius: 5px;
+  border-radius: 2px;
   padding: 1px 7px;
   font-size: 11px;
   font-weight: 500;
@@ -794,48 +1894,186 @@ textarea {
   transition: width 0.4s ease;
 }
 
-/* ── step graph ────────────────────────────────────────────────────────── */
+/* ── step flow ─────────────────────────────────────────────────────────── */
 
-.graph__scroll {
+/* overflow-x:auto forces the other axis to compute to `auto` too, so this box
+   clips vertically whether we want it to or not. The bottom padding keeps the
+   last line of a card clear of that edge (and of the horizontal scrollbar). */
+.flow__scroll {
   overflow-x: auto;
-  padding: 6px 0 2px;
+  overflow-y: hidden;
+  padding: 8px 0 14px;
 }
 
-.graph {
+.flow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: min-content;
+}
+
+/* Fixed width, natural height. Cards grow downward into empty space, so no
+   amount of text can collide with anything. */
+.flowstep {
   position: relative;
+  flex: 0 0 auto;
+  width: 216px;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.graph__wires {
+/* ── the connector ─────────────────────────────────────────────────────────
+
+   Was a 36px stub floating in the gap. It is now a real span between the
+   discs carrying four things: the line, an arrowhead at the end it feeds, a
+   travelling pulse, and a caption above it.
+
+   The geometry: a .flowstep is 216px wide with 12px of padding, so its 54px
+   disc starts at 12 + (192 - 54) / 2 = 81px. The previous step's disc
+   therefore ends at -81px. The link spans that gap, held back 9px at each end
+   so it never touches either disc. */
+.link {
   position: absolute;
-  inset: 0;
+  top: 26px;
+  left: -72px;
+  width: 144px;
+  height: 2px;
   pointer-events: none;
 }
 
-.wire {
-  stroke: var(--hairline-strong);
-  stroke-width: 2;
-  stroke-dasharray: 5 5;
-}
-
-/* Solid where the run actually travelled; dashed where it never went. */
-.wire--travelled {
-  stroke: var(--accent);
-  stroke-dasharray: none;
-  opacity: 0.55;
-}
-
-.gnode {
+.link__line {
   position: absolute;
+  inset: 0;
+  border-radius: 1px;
+  background: var(--edge);
+}
+
+/* Where the run actually travelled. */
+.link--done .link__line {
+  background: var(--violet-dim);
+}
+
+/* Into the step being worked on: lit at the start, fading out ahead of
+   itself, because the work has not arrived at the far end yet. */
+.link--live .link__line {
+  background: linear-gradient(90deg, var(--violet-dim), var(--edge));
+}
+
+/* The arrowhead. A CSS triangle rather than a glyph so it inherits the line's
+   colour exactly and never picks up a font's own metrics. */
+.link__head {
+  position: absolute;
+  right: -1px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--edge);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: border-left-color 0.3s ease;
+}
+
+.link--done .link__head {
+  border-left-color: var(--violet-dim);
+}
+
+.link--live .link__head {
+  border-left-color: var(--accent);
+  filter: drop-shadow(0 0 5px var(--accent));
+}
+
+.link__pulse {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, var(--accent), #fff);
+  box-shadow: 0 0 10px var(--accent);
+  opacity: 0;
+}
+
+/* The one animation on the board, and it means one thing: work is moving
+   along this edge right now. Gated on the query rather than merely shortened,
+   so that under reduced motion the pulse is absent instead of parked
+   mid-line, where it would read as a permanent marker. */
+@media (prefers-reduced-motion: no-preference) {
+  .link__pulse {
+    animation: travel 1.5s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  }
+}
+
+@keyframes travel {
+  0% {
+    left: -26px;
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+.link__cap {
+  position: absolute;
+  top: -19px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.link--live .link__cap {
+  color: var(--accent);
+}
+
+/* ── the disc ──────────────────────────────────────────────────────────────
+
+   One shape for every state; border, fill and colour carry which one. The
+   number lives inside it and becomes a tick when the step is done, so there
+   is no separate badge on the rim — that was drawing the same number twice.
+
+   Note what is NOT here: green. The reference keeps its whole happy path in
+   the violet family and reserves amber for the one thing that needs a human,
+   so "finished" and "running" read as the same pipeline at different
+   brightness rather than as two unrelated signals. Blocked is the only colour
+   that breaks out, which is exactly the weight it should carry. */
+.gnode {
+  position: relative;
   display: grid;
   place-items: center;
+  width: 54px;
+  height: 54px;
+  flex: none;
   border-radius: 50%;
-  border: 3px solid var(--hairline-strong);
-  background: var(--surface);
+  border: 1.5px solid var(--edge-hot);
+  background: #0a0e19;
   color: var(--muted);
   cursor: pointer;
   padding: 0;
-  box-shadow: var(--shadow-card);
-  transition: transform 0.15s ease;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background 0.25s ease,
+    transform 0.15s ease;
 }
 
 .gnode:hover {
@@ -843,119 +2081,192 @@ textarea {
 }
 
 .gnode__glyph {
-  font-size: 20px;
+  font-family: var(--font-mono);
+  font-size: 15px;
   line-height: 1;
   font-weight: 700;
-}
-
-/* The step number sits on the rim, like the reference deck's 01/02/03. */
-.gnode__num {
-  position: absolute;
-  bottom: -7px;
-  right: -7px;
-  min-width: 21px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--rail);
-  color: var(--rail-ink);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  transition: color 0.25s ease;
 }
 
 .gnode--done {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: #fff;
-}
-
-.gnode--active {
-  border-color: var(--accent);
+  border-color: var(--violet-dim);
+  background: rgb(var(--violet-rgb) / 0.08);
   color: var(--accent);
-  animation: nodepulse 1.6s ease-in-out infinite;
 }
 
-.gnode--blocked {
-  background: var(--warn);
-  border-color: var(--warn);
-  color: #2a1a08;
+/* Not started and never reached are both dashed — neither was worked on — but
+   they are not the same claim, and the board has to keep them apart. Never
+   reached is dimmer and its ring is tighter, because it is a statement about
+   a run that ended, not about work still ahead. */
+.gnode--pending {
+  border-style: dashed;
+  opacity: 0.9;
 }
 
 .gnode--skipped {
   border-style: dashed;
-  opacity: 0.55;
+  border-color: var(--edge);
+  opacity: 0.5;
 }
 
-@keyframes nodepulse {
-  50% {
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 16%, transparent);
+.gnode--blocked {
+  border-color: var(--warn);
+  border-style: dashed;
+  background: none;
+  color: var(--warn);
+}
+
+/* Active but no process behind it — a run that stopped mid-step. It keeps the
+   accent so you can see where it got to, and pointedly does NOT get the halo,
+   which would claim work is happening. */
+.gnode--active {
+  border-color: var(--violet-dim);
+  background: rgb(var(--violet-rgb) / 0.1);
+  color: var(--accent);
+}
+
+/* Running for real. */
+.gnode--live {
+  border-color: transparent;
+  background: rgb(var(--violet-rgb) / 0.14);
+  box-shadow:
+    0 0 0 1px var(--violet-dim),
+    0 0 26px rgb(var(--violet-rgb) / 0.28);
+  color: var(--text);
+}
+
+.gnode--live::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  border: 1px solid rgb(var(--violet-rgb) / 0.4);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gnode--live::after {
+    animation: ping 2.1s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
   }
 }
 
+@keyframes ping {
+  0% {
+    transform: scale(0.86);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.28);
+    opacity: 0;
+  }
+}
+
+/* The expanded step. Cyan is the only non-violet, non-amber colour on the
+   board and it means one thing: this is the one you clicked. */
+.gnode--sel {
+  outline: 1px solid var(--info);
+  outline-offset: 5px;
+}
+
 .gcard {
-  position: absolute;
+  margin-top: 12px;
   text-align: center;
+  width: 100%;
 }
 
 .gcard__title {
   font-size: 12.5px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.4;
   text-wrap: balance;
+  overflow-wrap: anywhere;
+  color: var(--ink);
 }
 
-.gcard__title--done {
-  color: var(--muted);
-}
-
+/* Finished and unreached steps step back, but stay READABLE. These were
+   --muted at 0.7 opacity, which on the dark theme was barely legible — an
+   unreached step still has to be readable to be useful. */
+.gcard__title--done,
 .gcard__title--skipped {
-  color: var(--muted);
-  opacity: 0.7;
+  color: var(--ink-soft);
 }
 
-.gcard__meta {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-top: 5px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
+/* Who runs this step. The reference's equivalent line names the ComfyUI class
+   doing the work; mono and dim, it reads as a machine fact rather than as
+   part of the title. */
 .gcard__owner {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 4px;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
 }
 
-.gcard__status--blocked {
-  color: var(--warn);
+.gcard__status {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
   font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gcard__status--done {
+  color: var(--violet-dim);
 }
 
 .gcard__status--active {
   color: var(--accent);
-  font-weight: 500;
+}
+
+.gcard__status--blocked {
+  color: var(--warn);
 }
 
 .gcard__note {
-  margin-top: 5px;
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 6px 8px;
+  border: 0;
+  border-left: 2px solid var(--hairline-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--raised);
+  font: inherit;
   font-size: 11px;
-  line-height: 1.45;
-  color: var(--muted);
+  line-height: 1.5;
+  color: var(--ink-soft);
   text-align: left;
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
-.gcard__note--clamp {
+.gcard__note:hover {
+  border-left-color: var(--accent);
+}
+
+/* The clamp is on the inner span. Applied to the button it rendered an
+   ellipsis and then kept drawing the rest of the lines anyway, which is what
+   spilled text out through the bottom of the goal card. */
+.gcard__note-clamp {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.gcard__note-more {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
 }
 
 /* ── see-it-yourself steps ─────────────────────────────────────────────── */
@@ -1016,7 +2327,7 @@ textarea {
 .handoff__copy {
   margin-left: auto;
   border: 1px solid var(--accent);
-  border-radius: 7px;
+  border-radius: 3px;
   background: var(--accent);
   color: var(--accent-ink);
   padding: 3px 12px;
@@ -1132,20 +2443,20 @@ textarea {
 .stepmark--done {
   background: var(--ok);
   border-color: var(--ok);
-  color: #fff;
+  color: var(--ok-ink);
 }
 
 .stepmark--active {
   border-color: var(--accent);
   color: var(--accent);
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
 .stepmark--blocked {
   background: var(--warn);
   border-color: var(--warn);
-  color: #2a1a08;
-  border-radius: 4px;
+  color: var(--warn-ink);
+  border-radius: 2px;
   font-weight: 700;
 }
 
@@ -1168,7 +2479,7 @@ textarea {
   gap: 10px;
   background: var(--surface);
   border: 1px solid var(--hairline-strong);
-  border-radius: 22px;
+  border-radius: 3px;
   padding: 8px 8px 8px 16px;
   box-shadow: var(--shadow-card);
 }
@@ -1216,6 +2527,17 @@ textarea {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  min-height: 16px;
+}
+
+/* Why sending is unavailable — stated, not implied by a dead-looking box. */
+.composer__blocked {
+  color: var(--warn);
+}
+
+.composer__flash {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 /* ── participants ──────────────────────────────────────────────────────── */
@@ -1258,7 +2580,7 @@ textarea {
   gap: 10px;
   align-items: center;
   padding: 8px;
-  border-radius: 9px;
+  border-radius: 3px;
 }
 
 .participant--button {
@@ -1322,7 +2644,7 @@ textarea {
   border: 1px solid var(--hairline-strong);
   background: var(--raised);
   color: var(--ink);
-  border-radius: 9px;
+  border-radius: 3px;
   padding: 9px;
   font-weight: 500;
   cursor: pointer;
@@ -1339,7 +2661,7 @@ textarea {
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgb(20 10 9 / 0.55);
+  background: rgb(3 4 9 / 0.74);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -1347,9 +2669,9 @@ textarea {
 }
 
 .modal {
-  background: var(--canvas);
+  background: var(--surface);
   border: 1px solid var(--hairline-strong);
-  border-radius: 14px;
+  border-radius: 3px;
   box-shadow: var(--shadow-pop);
   width: min(860px, 100%);
   max-height: 88vh;
@@ -1413,7 +2735,7 @@ textarea {
 .textarea,
 .select {
   border: 1px solid var(--hairline-strong);
-  border-radius: 8px;
+  border-radius: 3px;
   background: var(--surface);
   color: var(--ink);
   padding: 8px 11px;
@@ -1462,7 +2784,7 @@ textarea {
   border: 1px solid var(--hairline-strong);
   background: var(--surface);
   color: var(--ink);
-  border-radius: 8px;
+  border-radius: 3px;
   padding: 8px 15px;
   cursor: pointer;
 }
@@ -1510,4 +2832,920 @@ textarea {
   border-radius: 50%;
   background: var(--warn);
   flex: none;
+}
+
+.banner--error {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--ink);
+}
+
+.banner--error::before {
+  background: var(--accent);
+}
+
+.banner--warn {
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  color: var(--ink-soft);
+}
+
+.banner__dismiss {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.banner__dismiss:hover {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+/* ── mind stone ────────────────────────────────────────────────────────── */
+
+.stone {
+  border-top: 1px solid var(--hairline);
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.stone__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stone__title {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+}
+
+.stone__when {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stone__pulse {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stone__pulse {
+    animation: stone-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes stone-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.stone__hint,
+.stone__peek {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Two lines is the honest amount of room here — the panel sits above the
+   legend and must not push it off the rail. The rest is behind Read memory. */
+.stone__peek {
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.stone__open {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--hairline-strong);
+  background: var(--raised);
+  color: var(--ink);
+  border-radius: 3px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stone__open:hover {
+  border-color: var(--accent);
+}
+
+.stone__count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stonebody {
+  max-width: 62ch;
+}
+
+.stonebody__h {
+  margin: 18px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stonebody__h:first-child {
+  margin-top: 0;
+}
+
+.stonebody__p {
+  margin: 0 0 5px;
+  padding-left: 13px;
+  position: relative;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.stonebody__p::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.66em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.stonebody__gap {
+  height: 2px;
+}
+
+/* Key for the fleet graph. The gauntlet is not self-explanatory the way a
+   plain dot was, so the three states it can be in are named up front. */
+.fleetkey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-bottom: 22px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.fleetkey > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fleetkey i {
+  display: block;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+}
+
+.fleetkey__note {
+  margin-left: auto;
+  opacity: 0.75;
+}
+
+/* Stop, on every goal card. Sits under the percentage so the two right-hand
+   figures — how far it got, and the one control — stack in the same column. */
+.goal__right {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+}
+
+.goal__stop {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 3px;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.goal__stop:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* Disabled reads as unavailable, not broken: it keeps its shape and loses
+   its fill, so the live card is unmistakably the one that can be stopped. */
+.goal__stop:disabled {
+  border-color: var(--hairline-strong);
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+
+/* Resume sits where Stop does, so the one control on a card is always in the
+   same place. Outlined rather than filled: picking work back up is the calmer
+   of the two actions and should not shout louder than stopping a live run. */
+.goal__resume {
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.goal__resume:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.goal__resume:disabled {
+  border-color: var(--hairline-strong);
+  color: var(--muted);
+  cursor: default;
+}
+
+/* ── decision card ─────────────────────────────────────────────────────── */
+
+/* A question the room is putting to Dominic. Accent-bordered because it is the
+   one thing in the transcript that is waiting on him rather than informing
+   him — everything else can be read later; this is blocking work right now. */
+.decision {
+  margin: 14px 0;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.decision--answered {
+  border-color: var(--hairline-strong);
+}
+
+.decision__head {
+  padding: 9px 14px;
+  background: var(--accent-wash);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.decision--answered .decision__head {
+  background: var(--raised);
+}
+
+.decision__label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.decision--answered .decision__label {
+  color: var(--muted);
+}
+
+.decision__body {
+  padding: 13px 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.decision__options {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 14px 14px;
+}
+
+.decision__note {
+  margin: 0;
+  padding: 0 14px 13px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Full-width rows rather than a button bar: the detail line is what makes the
+   choice possible to make, and it needs room to be a real sentence. */
+.choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 3px;
+  background: var(--canvas);
+  color: var(--ink);
+  padding: 10px 13px;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.choice:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.choice:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.choice--picked {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  opacity: 1;
+}
+
+.choice--picked .choice__label::after {
+  content: " ✓";
+  color: var(--accent);
+}
+
+.choice__label {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.choice__detail {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ══ HUD chrome ═════════════════════════════════════════════════════════════
+
+   Everything above styles Agora's structure. Everything below is the surface
+   treatment that makes it read as a command console rather than a chat app:
+   the screen overlays, the corner brackets, and the label typography.
+
+   It is deliberately one contiguous block at the end of the file. If the look
+   ever has to come off, this section and tokens.css are the whole of it.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* ── screen overlays ───────────────────────────────────────────────────────
+
+   Two fixed layers sit above everything, modals included — they are a
+   property of the screen, not of any one panel. Both are pointer-events:none,
+   so nothing underneath loses a click, and both sit above the modal scrim
+   (z-index 20) which is the highest thing the app itself paints. */
+
+/* Violet bloom from the top edge, a cooler cyan wash rising from the bottom.
+   This is what stops the void reading as a flat #000 rectangle. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgb(var(--violet-rgb) / 0.09), transparent 60%),
+    radial-gradient(90% 70% at 50% 110%, rgb(var(--cyan-rgb) / 0.05), transparent 60%);
+}
+
+/* Scanlines. Held at 0.2 opacity on a 3px pitch: past roughly 0.3 they start
+   to chew into 12px type, and the transcript is nothing but small type. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 61;
+  opacity: 0.2;
+  background: repeating-linear-gradient(
+    0deg,
+    rgb(255 255 255 / 0.028) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+/* A CRT effect is exactly the kind of motion-adjacent decoration that makes
+   some people ill. Reduced-motion drops the scanlines entirely; the bloom is
+   static, so it stays. */
+@media (prefers-reduced-motion: reduce) {
+  body::after {
+    display: none;
+  }
+}
+
+/* ── corner brackets ───────────────────────────────────────────────────────
+
+   The signature of the reference: a 7px L in each of two opposite corners, so
+   a panel reads as a machined frame rather than a rounded card.
+
+   Only the framed regions get them — the six containers a HUD would actually
+   draw a frame around. Putting brackets on every tile and bubble turns the
+   page into static, which is the failure mode of this entire aesthetic. */
+.dash__panel,
+.participants,
+.modal,
+.goal,
+.decision,
+.planstrip {
+  position: relative;
+}
+
+.dash__panel::before,
+.dash__panel::after,
+.participants::before,
+.participants::after,
+.modal::before,
+.modal::after,
+.goal::before,
+.goal::after,
+.decision::before,
+.decision::after,
+.planstrip::before,
+.planstrip::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--violet-dim);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Top-left L: keep the top and left strokes, drop the other two. */
+.dash__panel::before,
+.participants::before,
+.modal::before,
+.goal::before,
+.decision::before,
+.planstrip::before {
+  top: 0;
+  left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+/* Bottom-right L, mirrored. */
+.dash__panel::after,
+.participants::after,
+.modal::after,
+.goal::after,
+.decision::after,
+.planstrip::after {
+  bottom: 0;
+  right: 0;
+  border-left: 0;
+  border-top: 0;
+}
+
+/* A panel carrying the accent border states it in the accent, not the dim
+   violet — otherwise the brackets fight the thing they are framing. */
+.decision::before,
+.decision::after {
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+/* ── label typography ──────────────────────────────────────────────────────
+
+   The micro-labels already existed and already tracked; they tracked at
+   0.04em, which is a normal small-caps label. The HUD reads at 0.18em, and
+   they only read as a system if every one of them uses the same value —
+   hence --track rather than six hand-tuned numbers. */
+.dash__h,
+.tile__label,
+.rail__sub,
+.activity__label,
+.dash__memlabel,
+.rail__foot-label,
+.participants__count {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* These two are structural headings, so they keep their own weight and colour
+   but adopt the tracking. */
+.dash__h {
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.participants__title,
+.topbar__name {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 13px;
+}
+
+/* Every number in this interface is a readout. Tabular figures stop them
+   jittering as they tick — the run counters and the token totals both do. */
+.mono,
+code,
+kbd,
+samp,
+[class*="__n"],
+[class*="__value"],
+[class*="__count"],
+[class*="__time"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── wordmark ──────────────────────────────────────────────────────────────
+
+   AGORA, tracked wide, with the last two letters in violet. Same construction
+   as the reference's wordmark; the name is unchanged. */
+.rail__title {
+  display: inline-block;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.rail__title i {
+  font-style: normal;
+  color: var(--accent);
+}
+
+/* The mark beside it is a sigil, not an app icon — a thin violet frame rather
+   than a filled rounded square. */
+.rail__mark {
+  background: transparent;
+  border: 1px solid var(--violet-dim);
+  color: var(--accent);
+  box-shadow: inset 0 0 12px rgb(var(--violet-rgb) / 0.16);
+}
+
+/* ── surfaces and scrollbars ───────────────────────────────────────────────
+
+   Panels in the reference are a vertical gradient between the two panel
+   tones, not a flat fill. It is a small difference that does most of the work
+   of making a black interface look lit rather than switched off. */
+.dash__panel,
+.goal,
+.tile,
+.participants,
+.modal,
+.planstrip,
+.composer__box {
+  background-image: linear-gradient(180deg, var(--panel-2), var(--panel));
+}
+
+/* Accent-washed surfaces opt out — the gradient would cancel their tint. */
+.tile--accent {
+  background-image: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--edge-hot) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--edge-hot);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--violet-dim);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── the running state ─────────────────────────────────────────────────────
+
+   One place earns a glow: whatever is live right now. The reference reserves
+   its brightest treatment for the agent holding the lock, and the equivalent
+   here is the room with a run in flight. */
+.runbar {
+  border-bottom-color: var(--violet-dim);
+  box-shadow: inset 0 -1px 0 rgb(var(--violet-rgb) / 0.18);
+}
+
+.agentcard--live,
+.tile--accent {
+  box-shadow: var(--glow);
+}
+
+/* ══ the goal dial ══════════════════════════════════════════════════════════
+
+   The one piece kept from the running-states deck, because it answers a
+   question the pipeline board does not: the board shows you where a run got
+   to, the dial shows you how much of the goal that represents.
+
+   The ki charge and the acquire sweep that used to sit here were both
+   replaced by the pipeline design's own running state — the haloed disc and
+   the pulse travelling into it. Two treatments for one fact is one too many.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* ── 04 · orbit dial ───────────────────────────────────────────────────────
+
+   Replaces the bare percentage on each goal card. One tick per step, coloured
+   by that step's own status, so the ring is a legend for the whole goal and
+   not just a restatement of the number inside it. */
+
+.dial {
+  position: relative;
+  width: 66px;
+  height: 66px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.dial__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dial__pct {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.dial__tick {
+  stroke: var(--edge-hot);
+  stroke-width: 3;
+  transition: stroke 0.4s ease;
+}
+
+.dial__tick--done {
+  stroke: var(--violet-dim);
+}
+
+.dial__tick--active {
+  stroke: var(--accent);
+}
+
+.dial__tick--blocked {
+  stroke: var(--warn);
+}
+
+/* Never reached is a different statement from not yet started, and the ring
+   has to keep them apart or it overstates what the run actually covered. */
+.dial__tick--skipped {
+  stroke: var(--edge);
+}
+
+/* The satellite exists so the dial still reads as alive between steps — on a
+   long step every tick holds its colour for minutes, and a frozen ring beside
+   a live run looks like a hung interface. */
+.dial__sat circle {
+  fill: var(--cyan);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dial__sat {
+    transform-origin: 50% 50%;
+    animation: orbit 2.2s linear infinite;
+  }
+}
+
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── the step legend ───────────────────────────────────────────────────────
+
+   Five states share one ring, and three of them are told apart by colour and
+   border style alone. The reference carries a legend for four states; with a
+   fifth to place, this board needs it more, not less.
+
+   Each swatch is drawn from the same declarations as the disc it stands for,
+   so a change to a state's colour cannot leave its key behind. */
+.steplegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lg i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--edge-hot);
+  flex: none;
+}
+
+.lg--done i {
+  border-color: var(--violet-dim);
+  background: rgb(var(--violet-rgb) / 0.4);
+}
+
+.lg--active i {
+  border-color: transparent;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.lg--pending i {
+  border-style: dashed;
+}
+
+.lg--blocked i {
+  border-color: var(--warn);
+  border-style: dashed;
+}
+
+.lg--skipped i {
+  border-style: dashed;
+  border-color: var(--edge);
+  opacity: 0.5;
+}
+
+/* ── the tagpill ───────────────────────────────────────────────────────────
+
+   The reference labels the pass that holds the GPU. Agora's equivalent is
+   exact rather than analogous: a live run holds the room, and no other goal
+   in it may start until this one lets go. */
+.tagpill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--violet-dim);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
+/* ── HD-2D gym view ────────────────────────────────────────────────────────
+ *
+ * The stage fills whatever the main column gives it and the renderer follows
+ * via a ResizeObserver, so the diorama is never letterboxed or stretched.
+ */
+
+.gymscene {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--void);
+}
+
+.gymscene__stage {
+  position: absolute;
+  inset: 0;
+}
+
+.gymscene__stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Labels are HTML on top of the canvas rather than text in the scene: the
+   tilt-shift pass that sells the miniature would blur any name drawn into it. */
+.gymscene__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gymscene__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: rgb(6 8 15 / 0.78);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+
+.gymscene__label[data-state="processing"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--glow);
+}
+
+.gymscene__label[data-state="offline"] {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+.gymscene__hud {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.gymscene__room {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.gymscene__stat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── the scene in the sidebar ──────────────────────────────────────────────
+ *
+ * Same component as the full-width Gym view. The camera solves its own distance
+ * from the viewport aspect, so the only thing that changes here is the box it
+ * is given and the weight of the labels.
+ */
+
+.gymscene--compact {
+  /* The roster used to sit under this and cap it at a fixed 230px. With the
+     roster gone the scene takes the whole space above the mind stone, and the
+     camera re-frames itself to whatever box that turns out to be. */
+  flex: 1;
+  min-height: 180px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.gymscene--compact .gymscene__label {
+  padding: 1px 4px;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+}
+
+/* At sidebar size the glow is the loudest thing on the panel, so it is dialled
+   back to a border and a colour rather than a full bloom. */
+.gymscene--compact .gymscene__label[data-state="processing"] {
+  box-shadow: none;
+}
+
+.gymscene__nogl {
+  margin: 0;
+  padding: 24px 16px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }

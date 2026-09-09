@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   Agent,
+  AgentMemory,
   AgentStatus,
   Goal,
   Message,
+  MindStone,
   Room,
   RunState,
   ServerEvent,
@@ -24,9 +26,17 @@ export interface AgoraState {
   /** Newest first. The active one, if any, is the run's current plan. */
   goals: Goal[];
   run: RunState | null;
+  /** The selected room's compacted memory. null until it has been compacted once. */
+  mindStone: MindStone | null;
+  /** Per-agent lifetime volume in the selected room — what sizes the gym figures. */
+  memory: Record<string, AgentMemory>;
+  /** Live runs across every room — for the activity board. */
+  runs: RunState[];
   live: Live | null;
   notifyLive: boolean;
   error: string | null;
+  /** Transient rate-limit flash for the current room. */
+  rateLimit: string | null;
 }
 
 export function useAgora(roomId: string | null) {
@@ -38,9 +48,13 @@ export function useAgora(roomId: string | null) {
     messages: [],
     goals: [],
     run: null,
+    mindStone: null,
+    memory: {},
+    runs: [],
     live: null,
     notifyLive: false,
     error: null,
+    rateLimit: null,
   });
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -65,9 +79,31 @@ export function useAgora(roomId: string | null) {
         if (room) {
           void (async () => {
             try {
-              const res = await fetch(`/api/rooms/${room}/messages`);
-              const data = (await res.json()) as { messages: Message[]; run: RunState | null };
-              setState((s) => ({ ...s, messages: data.messages, run: data.run }));
+              // Goals are resynced here too, not just messages. They were not,
+              // and that is what made the Workflow view lie: a run killed while
+              // the socket was down left the client holding a goal still marked
+              // active, so its card read "Running" against a server that had
+              // already closed it out. Stop was then correctly disabled, which
+              // reads as a broken button rather than as nothing left to stop.
+              const [msgRes, goalRes] = await Promise.all([
+                fetch(`/api/rooms/${room}/messages`),
+                fetch(`/api/rooms/${room}/goals`),
+              ]);
+              const data = (await msgRes.json()) as {
+                messages: Message[];
+                run: RunState | null;
+                mindStone: MindStone | null;
+                memory: Record<string, AgentMemory>;
+              };
+              const goalData = (await goalRes.json()) as { goals: Goal[] };
+              setState((s) => ({
+                ...s,
+                messages: data.messages,
+                goals: goalData.goals,
+                run: data.run,
+                mindStone: data.mindStone,
+                memory: data.memory ?? {},
+              }));
             } catch {
               /* the reconnect loop will try again */
             }
@@ -84,8 +120,17 @@ export function useAgora(roomId: string | null) {
           connected: false,
           live: null,
           run: s.run?.active
-            ? { ...s.run, active: false, speaking: null, stopReason: "disconnected" }
+            ? {
+                ...s.run,
+                active: false,
+                speaking: null,
+                phase: null,
+                phaseDetail: null,
+                turnStartedAt: null,
+                stopReason: "disconnected",
+              }
             : s.run,
+          runs: [],
         }));
         if (!closed) retry = setTimeout(connect, 1500);
       };
@@ -114,15 +159,35 @@ export function useAgora(roomId: string | null) {
               return { ...s, rooms: event.rooms };
             case "status":
               return { ...s, statuses: event.statuses };
-            case "message":
+            case "runs":
+              return { ...s, runs: event.runs };
+            case "message": {
               if (event.message.roomId !== current) return s;
+              // Grow the figure in place rather than refetching: the server's
+              // number is the baseline from room-select, and every message after
+              // it is one we are holding right here. Only `agent` messages count,
+              // matching what agentMemory() counts on the server — otherwise a
+              // notice would fatten someone who never wrote it.
+              const a = event.message.authorId;
+              const grow =
+                event.message.kind === "agent" && a !== "human"
+                  ? {
+                      ...s.memory,
+                      [a]: {
+                        messages: (s.memory[a]?.messages ?? 0) + 1,
+                        chars: (s.memory[a]?.chars ?? 0) + event.message.text.length,
+                      },
+                    }
+                  : s.memory;
               return {
                 ...s,
                 messages: [...s.messages, event.message],
+                memory: grow,
                 // The persisted message replaces whatever was streaming.
                 live:
                   s.live && s.live.agentId === event.message.authorId ? null : s.live,
               };
+            }
             case "turn_start":
               if (event.roomId !== current) return s;
               return {
@@ -145,13 +210,42 @@ export function useAgora(roomId: string | null) {
                 ...s,
                 run: event.state,
                 live: event.state.active ? s.live : null,
+                rateLimit:
+                  event.state.phase === "rate_limited"
+                    ? (event.state.phaseDetail ?? "Rate limited")
+                    : s.rateLimit,
+              };
+            case "mind_stone":
+              if (event.roomId !== current) return s;
+              return { ...s, mindStone: event.stone };
+            case "message_update":
+              if (event.message.roomId !== current) return s;
+              return {
+                ...s,
+                messages: s.messages.map((m) =>
+                  m.id === event.message.id ? event.message : m,
+                ),
               };
             case "goal": {
               if (event.goal.roomId !== current) return s;
               const rest = s.goals.filter((g) => g.id !== event.goal.id);
               return { ...s, goals: [event.goal, ...rest] };
             }
+            case "rate_limit":
+              if (event.roomId !== current) return s;
+              return {
+                ...s,
+                rateLimit: event.detail.slice(0, 240),
+                run: s.run
+                  ? {
+                      ...s.run,
+                      phase: "rate_limited",
+                      phaseDetail: event.detail.slice(0, 200),
+                    }
+                  : s.run,
+              };
             case "error":
+              if (event.roomId != null && event.roomId !== current) return s;
               return { ...s, error: event.detail };
             default:
               return s;
@@ -171,7 +265,17 @@ export function useAgora(roomId: string | null) {
   // Load history whenever the selected room changes.
   useEffect(() => {
     if (!roomId) {
-      setState((s) => ({ ...s, messages: [], goals: [], run: null, live: null }));
+      setState((s) => ({
+        ...s,
+        messages: [],
+        goals: [],
+        run: null,
+        mindStone: null,
+        memory: {},
+        live: null,
+        error: null,
+        rateLimit: null,
+      }));
       return;
     }
     let cancelled = false;
@@ -180,7 +284,12 @@ export function useAgora(roomId: string | null) {
         fetch(`/api/rooms/${roomId}/messages`),
         fetch(`/api/rooms/${roomId}/goals`),
       ]);
-      const data = (await msgRes.json()) as { messages: Message[]; run: RunState | null };
+      const data = (await msgRes.json()) as {
+        messages: Message[];
+        run: RunState | null;
+        mindStone: MindStone | null;
+        memory: Record<string, AgentMemory>;
+      };
       const goalData = (await goalRes.json()) as { goals: Goal[] };
       if (cancelled) return;
       setState((s) => ({
@@ -188,7 +297,11 @@ export function useAgora(roomId: string | null) {
         messages: data.messages,
         goals: goalData.goals,
         run: data.run,
+        mindStone: data.mindStone,
+        memory: data.memory ?? {},
         live: null,
+        error: null,
+        rateLimit: null,
       }));
     })();
     return () => {
@@ -212,11 +325,50 @@ export function useAgora(roomId: string | null) {
     if (roomId) send({ type: "stop", roomId });
   }, [roomId, send]);
 
+  const answer = useCallback(
+    (messageId: string, label: string): void => {
+      if (roomId) send({ type: "answer", roomId, messageId, label });
+    },
+    [roomId, send],
+  );
+
+  const resume = useCallback(
+    (goalId: string): void => {
+      if (roomId) send({ type: "resume", roomId, goalId });
+    },
+    [roomId, send],
+  );
+
+  /** Force an immediate reconnect instead of waiting out the retry timer. */
+  const reconnect = useCallback((): void => {
+    const socket = socketRef.current;
+    // Closing triggers the existing onclose handler, which schedules a retry.
+    if (socket && socket.readyState !== WebSocket.CLOSED) socket.close();
+  }, []);
+
+  const clearError = useCallback((): void => {
+    setState((s) => ({ ...s, error: null }));
+  }, []);
+
+  const clearRateLimit = useCallback((): void => {
+    setState((s) => ({ ...s, rateLimit: null }));
+  }, []);
+
   const refreshRooms = useCallback(async (): Promise<void> => {
     const res = await fetch("/api/state");
     const data = (await res.json()) as { rooms: Room[]; agents: Agent[] };
     setState((s) => ({ ...s, rooms: data.rooms, agents: data.agents }));
   }, []);
 
-  return { state, broadcast, stop, refreshRooms };
+  return {
+    state,
+    broadcast,
+    stop,
+    resume,
+    answer,
+    refreshRooms,
+    reconnect,
+    clearError,
+    clearRateLimit,
+  };
 }

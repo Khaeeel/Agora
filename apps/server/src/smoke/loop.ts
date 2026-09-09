@@ -77,7 +77,7 @@ const emit = (event: ServerEvent): void => {
       if (!event.state.active) {
         console.log(
           `\n\n--- run finished: ${event.state.stopReason} ` +
-            `after ${event.state.turn} turns, $${event.state.costUsd.toFixed(4)} ---`,
+            `after ${event.state.turn} turns ---`,
         );
       }
       break;

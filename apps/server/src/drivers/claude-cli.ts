@@ -33,10 +33,19 @@ export class ClaudeCliDriver implements AgentDriver {
       for (const dir of req.addDirs) args.push("--add-dir", dir);
     }
 
-    // MCP tools are granted separately from --tools: they are matched by
-    // pattern through --allowedTools, e.g. mcp__chrome-devtools__*
-    if (req.mcp.length > 0) {
-      args.push("--allowedTools", ...req.mcp.map((id) => `mcp__${id}__*`));
+    // Permission grants. `--tools` only says a tool exists — using it still
+    // needs approval, and in print mode there is nobody to approve, so the call
+    // comes back as a permission_denial. MCP servers and things like
+    // WebFetch(domain:...) are both granted here.
+    const grants = [...req.mcp.map((id) => `mcp__${id}__*`), ...req.allow];
+    if (grants.length > 0) {
+      args.push("--allowedTools", ...grants);
+    }
+
+    // stdio MCP servers the CLI does not already know about. Variadic, so it
+    // must be followed by another flag — the trailing block below handles that.
+    if (req.mcpConfigs.length > 0) {
+      args.push("--mcp-config", ...req.mcpConfigs);
     }
 
     if (req.schema) args.push("--json-schema", JSON.stringify(req.schema));
@@ -104,7 +113,12 @@ export class ClaudeCliDriver implements AgentDriver {
 
       if (kind === "stream_event") {
         const inner = evt["event"] as Record<string, unknown> | undefined;
-        if (inner?.["type"] === "content_block_delta") {
+        if (inner?.["type"] === "content_block_start") {
+          const block = inner["content_block"] as Record<string, unknown> | undefined;
+          if (block?.["type"] === "tool_use" && typeof block["name"] === "string") {
+            yield { type: "tool_use", name: block["name"] };
+          }
+        } else if (inner?.["type"] === "content_block_delta") {
           const delta = inner["delta"] as Record<string, unknown> | undefined;
           if (delta?.["type"] === "text_delta" && typeof delta["text"] === "string") {
             text += delta["text"];

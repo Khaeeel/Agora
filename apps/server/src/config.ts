@@ -29,25 +29,113 @@ export const config = {
   dbPath: resolve(ROOT, "data", "agora.db"),
 
   claudeBin: str("CLAUDE_BIN", "/home/dominickooya/.local/bin/claude"),
+  cursorBin: str("CURSOR_BIN", "/home/dominickooya/.local/bin/cursor-agent"),
+
+  /**
+   * Which CLI runs agent turns: "claude" (default) or "cursor".
+   *
+   * Cursor spends the idle Cursor seat instead of the Claude Max pool that
+   * rule 11 accounts for. It is opt-in because it is strictly weaker in two
+   * ways the drivers document: the system prompt has no privileged channel,
+   * and structured output is extracted rather than schema-validated. Leave the
+   * orchestrator seat on Claude unless a run has been watched end to end.
+   */
+  driver: str("AGORA_DRIVER", "claude"),
+
+  /**
+   * Model for the cursor driver. "auto" lets Cursor route each turn itself and
+   * is the default for a reason: the per-agent `model:` lines in agents/*.md
+   * are Claude Code ids, and they do NOT all exist on the Cursor side.
+   * Verified against `cursor-agent models`: there is no haiku of any version,
+   * so Sarah and Scofield (claude-haiku-4-5) would fail outright if their
+   * frontmatter model were passed through. Effort is also encoded differently
+   * — `claude-sonnet-5-low`, not a separate flag.
+   *
+   * Set this to a specific id (e.g. claude-opus-5-high) to pin every cursor
+   * turn to one model instead. Per-agent model selection is not available on
+   * this driver; that is a real capability loss versus Claude and it is why
+   * the room's cheap roles no longer run cheap.
+   */
+  cursorModel: str("AGORA_CURSOR_MODEL", "auto"),
+
+  /**
+   * The one phase that does NOT run on `auto`.
+   *
+   * `auto` routes to Cursor's own Composer, which is fast and cheap and fine
+   * for ordinary turns. The plan is different: it is written once, every step
+   * and owner for the rest of the run comes out of it, and Ceb later rules the
+   * phase against criteria frozen there. A weak plan is not a weak turn — it
+   * misdirects every turn after it, and nothing downstream can recover it.
+   *
+   * Set to "" to run planning on `auto` as well.
+   */
+  cursorPlanModel: str("AGORA_CURSOR_PLAN_MODEL", "claude-opus-5-high"),
+
   model: str("AGORA_MODEL", "claude-sonnet-5"),
   effort: str("AGORA_EFFORT", "low"),
 
+  /**
+   * Turns between progress reviews — NOT a hard stop.
+   *
+   * This used to end the run outright, which is how a goal reached "ended
+   * incomplete, 1 of 3 done" while the room was still perfectly capable of
+   * finishing. The room now works until the goal is met or it is genuinely
+   * stuck; this is only how often the orchestrator is made to stop and say
+   * which of those is true.
+   */
   maxTurns: int("AGORA_MAX_TURNS", 12),
+  /**
+   * How many review rounds a run may pass before it is stopped regardless of
+   * verdict. The wall-clock cap is the real backstop; this catches a room that
+   * is confidently reporting progress while going nowhere.
+   */
+  maxRounds: int("AGORA_MAX_ROUNDS", 6),
+  /**
+   * How many times a goal restarts itself after running out of budget before it
+   * gives up and asks for a human. Each attempt is a full run, so this multiplies
+   * the round ceiling rather than replacing it.
+   */
+  maxAutoResumes: int("AGORA_MAX_AUTO_RESUMES", 3),
+  /**
+   * A review also fires on the clock, not only on the turn count. Turns vary
+   * from seconds to minutes depending on what an agent is doing, so a purely
+   * turn-based pulse drifts: a browser sweep can spend half an hour inside its
+   * turn budget without Dominic hearing anything.
+   */
+  reviewEveryMs: int("AGORA_REVIEW_EVERY_MS", 600_000),
   /**
    * Backstop for the whole run. Deliberately generous: a browser sweep doing
    * real work legitimately takes many minutes, and killing it for that wastes
    * everything it had done. The per-TURN timeout below is what catches a stuck
    * agent — this only catches a stuck run.
    */
-  runTimeoutMs: int("AGORA_RUN_TIMEOUT_MS", 2_700_000),
+  runTimeoutMs: int("AGORA_RUN_TIMEOUT_MS", 5_400_000),
   /** One agent turn. Exceeding it fails that turn, not the run. */
   turnTimeoutMs: int("AGORA_TURN_TIMEOUT_MS", 300_000),
   maxConcurrency: int("AGORA_MAX_CONCURRENCY", 2),
   transcriptWindow: int("AGORA_TRANSCRIPT_WINDOW", 40),
+  /**
+   * Compact the room's mind stone once this many messages have accumulated
+   * since the last one. Compaction costs a model turn, so doing it after every
+   * run would tax short exchanges for no benefit; waiting far longer risks
+   * losing detail off the back of the transcript window.
+   */
+  mindStoneEvery: int("AGORA_MIND_STONE_EVERY", 25),
 
   openclawBin: str("OPENCLAW_BIN", "/home/dominickooya/.npm-global/bin/openclaw"),
   notifyJid: str("AGORA_NOTIFY_JID", ""),
   notifyDryRun: bool("AGORA_NOTIFY_DRY_RUN", true),
+
+  /**
+   * Honour an agent's `@next:` marker directly, skipping the orchestrator's
+   * decision turn — one fewer model round trip per visible message.
+   *
+   * DEFAULTS OFF ON PURPOSE. The marker is new: measured over 934 historical
+   * agent messages, 0% carried one. Routing on a marker whose real hit rate is
+   * unknown produces a router that silently stops routing. Watch the
+   * `event: "markers"` lines until the miss rate is low, then turn this on.
+   */
+  fastDispatch: bool("AGORA_FAST_DISPATCH", false),
   notifyMinIntervalS: int("AGORA_NOTIFY_MIN_INTERVAL_S", 60),
 
   port: int("AGORA_PORT", 8787),
