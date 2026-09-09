@@ -37,6 +37,7 @@ function fmtDuration(ms: number): string {
  */
 function displayText(text: string): string {
   return text
+    .replace(/^[\s\S]*?(?=^\s*kind:\s*(?:claim|question|result|pass)\s*$)/im, "")
     .replace(/^\s*kind:[^\n]*\n?/i, "")
     .replace(/\n?\s*@next:[^\n]*\s*$/i, "")
     .replace(/\s*\[#\d+\]/g, "")

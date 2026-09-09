@@ -138,8 +138,12 @@ export class ClaudeCliDriver implements AgentDriver {
         isError = evt["is_error"] === true;
         if (typeof evt["total_cost_usd"] === "number") costUsd = evt["total_cost_usd"];
         if (evt["structured_output"] != null) structured = evt["structured_output"];
-        // With a schema the prose channel is empty; `result` carries the payload.
-        if (!text && typeof evt["result"] === "string") text = evt["result"];
+        // `result` is the final assistant message on its own: without the
+        // narration streamed before tool calls, and without the duplicate
+        // text blocks the CLI re-emits after them. With a schema the prose
+        // channel is empty and `result` carries the payload. Either way it
+        // beats the accumulated deltas whenever it has content.
+        if (typeof evt["result"] === "string" && evt["result"].trim()) text = evt["result"];
       }
     }
 
