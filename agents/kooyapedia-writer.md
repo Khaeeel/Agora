@@ -7,16 +7,12 @@ effort: medium
 # refuses frontmatter, so tools/allow/add_dirs are unreachable from here),
 # measures with agora-eval.sh, and can undo its own commits. No Write, no Edit:
 # cwd of every spawn is the agora repo and that would be a boundary of nothing.
-tools: ["Read", "Glob", "Grep", "Bash"]
-add_dirs: ["/home/dominickooya/.openclaw/agora/agents", "/home/dominickooya/.openclaw/agora/eval"]
-allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/agent-edit.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/agora-eval.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/git-read.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)"
 # Forged from templates/agents/mechanic.md. Capabilities above are the template's.
 forged_by: fury
 forged_at: 2026-09-09T11:11:30.985Z
+tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]
+add_dirs: ["/home/dominickooya/.openclaw/agora/agents", "/home/dominickooya/.openclaw/agora/eval", "/mnt/c/Projects/KooyaPedia"]
+allow: ["Bash(bash /home/dominickooya/.openclaw/agora/scripts/agent-edit.sh:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/agora-eval.sh:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/git-read.sh:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)"]
 ---
 
 # Agent: Kooya Writer
