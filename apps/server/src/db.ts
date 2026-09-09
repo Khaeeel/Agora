@@ -160,6 +160,12 @@ db.exec(`
   if (!has("prompt_sha")) db.exec(`ALTER TABLE messages ADD COLUMN prompt_sha TEXT`);
 }
 
+// Per-goal tailoring of the agents working it — see Goal.tailor.
+{
+  const cols = db.prepare(`PRAGMA table_info(goals)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "tailor")) db.exec(`ALTER TABLE goals ADD COLUMN tailor TEXT`);
+}
+
 /**
  * Where each agent last spoke in each room.
  *
@@ -376,8 +382,18 @@ function rowToGoal(r: Record<string, unknown>): Goal {
     costUsd: Number(r["cost_usd"] ?? 0),
     handoff: r["handoff"] == null ? null : String(r["handoff"]),
     verify: r["verify"] == null ? null : String(r["verify"]),
+    tailor: r["tailor"] == null ? null : (JSON.parse(String(r["tailor"])) as Goal["tailor"]),
     steps: listSteps(id),
   };
+}
+
+/** Attach (or clear) the per-agent tailoring for a goal. */
+export function setGoalTailor(goalId: string, tailor: Goal["tailor"]): Goal | null {
+  db.prepare(`UPDATE goals SET tailor = ? WHERE id = ?`).run(
+    tailor && Object.keys(tailor).length ? JSON.stringify(tailor) : null,
+    goalId,
+  );
+  return getGoal(goalId);
 }
 
 /**

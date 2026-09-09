@@ -108,7 +108,11 @@ export function Composer({
         ) : (
           <>
             <span>Enter to send · Shift+Enter for a new line</span>
-            <span>The orchestrator decides who answers.</span>
+            <span>
+              {text.trimStart().startsWith("@")
+                ? "Direct message: only that agent answers, no planning."
+                : "The orchestrator decides who answers · @name to message one agent directly."}
+            </span>
           </>
         )}
       </p>

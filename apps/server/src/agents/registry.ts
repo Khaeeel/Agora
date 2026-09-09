@@ -4,7 +4,7 @@ import { parse as parseYaml } from "yaml";
 import chokidar from "chokidar";
 import { config } from "../config.ts";
 import { phoneStyleText, protocolText } from "../protocol.ts";
-import type { Agent } from "../types.ts";
+import type { Agent, Tailor } from "../types.ts";
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
@@ -184,15 +184,35 @@ export function grantAccess(
   agentId: string,
   grant: { dirs?: string[]; allow?: string[]; tools?: string[] },
 ): Agent {
+  return rewriteAccess(agentId, (c) => ({
+    tools: [...new Set([...c.tools, ...(grant.tools ?? [])])],
+    dirs: [...new Set([...c.addDirs, ...(grant.dirs ?? [])])],
+    allow: [...new Set([...c.allow, ...(grant.allow ?? [])])],
+  }));
+}
+
+/**
+ * Take back a per-goal grant when the goal closes. Tools stay: a bare Read or
+ * Bash with no dir and no allow line reaches nothing.
+ */
+export function revokeAccess(agentId: string, rev: { dirs?: string[]; allow?: string[] }): Agent {
+  return rewriteAccess(agentId, (c) => ({
+    tools: c.tools,
+    dirs: c.addDirs.filter((d) => !(rev.dirs ?? []).includes(d)),
+    allow: c.allow.filter((a) => !(rev.allow ?? []).includes(a)),
+  }));
+}
+
+function rewriteAccess(
+  agentId: string,
+  compute: (current: Agent) => { tools: string[]; dirs: string[]; allow: string[] },
+): Agent {
   const path = join(config.agentsDir, `${agentId}.md`);
   if (!existsSync(path)) throw new Error(`No agent called "${agentId}"`);
   const raw = readFileSync(path, "utf8");
   const fm = raw.match(FRONTMATTER);
   if (!fm) throw new Error(`${agentId} has no frontmatter`);
-  const current = parseAgentFile(path);
-  const tools = [...new Set([...current.tools, ...(grant.tools ?? [])])];
-  const dirs = [...new Set([...current.addDirs, ...(grant.dirs ?? [])])];
-  const allow = [...new Set([...current.allow, ...(grant.allow ?? [])])];
+  const { tools, dirs, allow } = compute(parseAgentFile(path));
 
   const lines = fm[1]!.split("\n");
   const kept: string[] = [];
@@ -435,8 +455,10 @@ export function buildSystemPrompt(
   agent: Agent,
   roomName: string,
   roster: Agent[],
-  opts: { chatTurn?: boolean } = {},
+  opts: { chatTurn?: boolean; tailor?: Tailor | null; goalTitle?: string | null } = {},
 ): string {
+  const t = opts.tailor;
+  const tailored = t && (t.skills || t.instructions || t.personality);
   const others = roster
     .filter((a) => a.id !== agent.id)
     .map((a) => `- ${a.name} (${a.id}) — ${a.role}`)
@@ -466,6 +488,21 @@ export function buildSystemPrompt(
         `and name who in this room should take it instead.`,
     agent.instructions && `## How you work\n${agent.instructions}`,
     agent.personality && `## Your voice\n${agent.personality}`,
+    // L3.5 — how the orchestrator tailored this agent for the goal in hand.
+    // Sits after the standing sections and says it wins where they differ, so
+    // the objective shapes the agent without anyone editing its file.
+    tailored
+      ? [
+          `## For this goal${opts.goalTitle ? ` — ${opts.goalTitle}` : ""}`,
+          `The orchestrator tailored your role for this objective. It adds to your ` +
+            `standing sections above and wins where they differ, for this goal only.`,
+          t.skills ? `### Skills for this goal\n${t.skills.trim()}` : "",
+          t.instructions ? `### How to work on this goal\n${t.instructions.trim()}` : "",
+          t.personality ? `### Voice for this goal\n${t.personality.trim()}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : "",
     others && `## Others in this room\n${others}`,
     "",
     // Without this, agents invent capabilities they do not have ("I only have a

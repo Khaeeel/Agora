@@ -19,6 +19,7 @@ import {
   setLastSpokenSeq,
   unfoldedMessages,
   setGoalHandoff,
+  setGoalTailor,
   setRoomMembers,
   updateStep,
 } from "./db.ts";
@@ -29,6 +30,7 @@ import {
   forgeAgent,
   grantAccess,
   listTemplates,
+  revokeAccess,
   slugify,
   writeRoomRules,
 } from "./agents/registry.ts";
@@ -49,6 +51,43 @@ const KOOYAPEDIA_GRANT = {
   allow: ["Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"],
 };
 
+/**
+ * What Dominic pointed at, when there is no planner to say so: a direct
+ * message or a plan that left `access` null. KooyaPedia by name, or the first
+ * folder-shaped token. Null when he named nothing.
+ */
+function inferAccess(text: string): { kind: "dir" | "kooyapedia"; path: string | null } | null {
+  if (/kooyapedia/i.test(text)) return { kind: "kooyapedia", path: null };
+  const m = text.match(/(?:[A-Za-z]:[\\/]|\/mnt\/[a-z]\/|\/home\/)[^\s"'`,;]+/);
+  if (m) return { kind: "dir", path: m[0].replace(/[.)\]]+$/, "") };
+  return null;
+}
+
+/** Turn a kind + path into the concrete grant, or say why not. Shared by every access path. */
+function resolveGrant(
+  kind: "dir" | "kooyapedia",
+  path: string | null,
+): { grant: { tools?: string[]; dirs?: string[]; allow?: string[] }; label: string } | { error: string } {
+  if (kind === "kooyapedia") return { grant: KOOYAPEDIA_GRANT, label: "KooyaPedia" };
+  const wanted = toWslPath(path ?? "");
+  if (!wanted.startsWith("/")) return { error: `"${path}" is not an absolute folder path.` };
+  if (!existsSync(wanted)) return { error: `"${wanted}" does not exist as seen from WSL.` };
+  let real: string;
+  try {
+    real = realpathSync(wanted);
+  } catch {
+    return { error: `"${wanted}" cannot be resolved.` };
+  }
+  if (!statSync(real).isDirectory()) return { error: `"${real}" is a file, not a folder.` };
+  if (real === config.root || real.startsWith(config.root + "/")) {
+    return { error: "the agora repo itself is never opened to a room — it holds the .env." };
+  }
+  if (!ACCESS_ROOTS.some((r) => real === r || real.startsWith(r + "/"))) {
+    return { error: `"${real}" is outside the folders a room may be given (${ACCESS_ROOTS.join(", ")}).` };
+  }
+  return { grant: { tools: ["Read", "Glob", "Grep"], dirs: [real] }, label: real };
+}
+
 /** `C:\\Projects\\X` or `C:/Projects/X` as WSL sees it. */
 function toWslPath(p: string): string {
   const m = p.trim().replace(/^["'`]|["'`]$/g, "").match(/^([A-Za-z]):[\\/](.*)$/);
@@ -66,6 +105,7 @@ import { ClaudeCliDriver } from "./drivers/claude-cli.ts";
 import { CursorCliDriver } from "./drivers/cursor-cli.ts";
 import { levelForRoom, notify, type NotifyKind } from "./notify.ts";
 import type {
+  AccessGrant,
   Agent,
   Choice,
   Goal,
@@ -75,6 +115,7 @@ import type {
   RunState,
   ServerEvent,
   StepStatus,
+  Tailor,
 } from "./types.ts";
 
 /**
@@ -159,6 +200,22 @@ const PLAN_SCHEMA = {
       required: ["kind", "path", "agents"],
       additionalProperties: false,
     },
+    tailor: {
+      type: ["array", "null"],
+      description:
+        "In work mode: how each agent you assign should adapt for THIS objective — the skills that matter here, how to work it, the voice to use. Two or three short lines per field, Taglish. Only for agents whose standing file does not already fit; null when nobody needs adjusting. This never edits a file: it lasts for the goal and is gone when the goal closes.",
+      items: {
+        type: "object",
+        properties: {
+          agent: { type: "string", description: "Agent id from the roster." },
+          skills: { type: ["string", "null"], description: "What this agent should count as its skills for this goal." },
+          instructions: { type: ["string", "null"], description: "How it should work on this goal." },
+          personality: { type: ["string", "null"], description: "The voice that fits this goal." },
+        },
+        required: ["agent", "skills", "instructions", "personality"],
+        additionalProperties: false,
+      },
+    },
     createRoom: {
       type: ["object", "null"],
       description:
@@ -193,9 +250,16 @@ const PLAN_SCHEMA = {
       },
     },
   },
-  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "access", "createRoom", "goal", "steps"],
+  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "access", "tailor", "createRoom", "goal", "steps"],
   additionalProperties: false,
 } as const;
+
+interface AccessAsk {
+  kind: "dir" | "kooyapedia";
+  path: string | null;
+  agents: string[];
+  reason: string;
+}
 
 interface SpawnRequest {
   template: string;
@@ -212,6 +276,7 @@ interface Plan {
   needsLookup: boolean | null;
   spawn: SpawnRequest | null;
   access: { kind: "dir" | "kooyapedia"; path: string | null; agents: string[] } | null;
+  tailor: Array<{ agent: string } & Tailor> | null;
   createRoom: { name: string; topic: string; members: string[] } | null;
   goal: string;
   steps: Array<{ title: string; owner: string | null }>;
@@ -311,6 +376,19 @@ const DECISION_SCHEMA = {
       required: ["template", "id", "name", "role", "brief"],
       additionalProperties: false,
     },
+    accessRequest: {
+      type: ["object", "null"],
+      description:
+        "When the room cannot proceed ONLY because it lacks read access to a folder or to KooyaPedia, ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Null otherwise.",
+      properties: {
+        kind: { type: "string", enum: ["dir", "kooyapedia"] },
+        path: { type: ["string", "null"], description: "The folder, Windows or WSL form. Null for kooyapedia." },
+        agents: { type: "array", items: { type: "string" }, description: "Agent ids that need it." },
+        reason: { type: "string", description: "One plain sentence, Taglish: what it is for." },
+      },
+      required: ["kind", "path", "agents", "reason"],
+      additionalProperties: false,
+    },
     notify: {
       type: ["object", "null"],
       description:
@@ -330,7 +408,7 @@ const DECISION_SCHEMA = {
       additionalProperties: false,
     },
   },
-  required: ["say", "next", "steps", "discuss", "spawn", "verify", "handoff", "notify"],
+  required: ["say", "next", "steps", "discuss", "spawn", "accessRequest", "verify", "handoff", "notify"],
   additionalProperties: false,
 } as const;
 
@@ -338,6 +416,7 @@ interface Decision {
   say: string;
   next: string | null;
   spawn: SpawnRequest | null;
+  accessRequest: AccessAsk | null;
   steps: Array<{ index: number; status: StepStatus; note: string | null }> | null;
   discuss: { agents: string[]; question: string } | null;
   verify: string | null;
@@ -686,6 +765,19 @@ const PROGRESS_SCHEMA = {
         additionalProperties: false,
       },
     },
+    accessRequest: {
+      type: ["object", "null"],
+      description:
+        "When the room cannot proceed ONLY because it lacks read access to a folder or to KooyaPedia, ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Null otherwise.",
+      properties: {
+        kind: { type: "string", enum: ["dir", "kooyapedia"] },
+        path: { type: ["string", "null"], description: "The folder, Windows or WSL form. Null for kooyapedia." },
+        agents: { type: "array", items: { type: "string" }, description: "Agent ids that need it." },
+        reason: { type: "string", description: "One plain sentence, Taglish: what it is for." },
+      },
+      required: ["kind", "path", "agents", "reason"],
+      additionalProperties: false,
+    },
     blocker: {
       type: ["string", "null"],
       description:
@@ -726,7 +818,7 @@ const PROGRESS_SCHEMA = {
   // way back into the room was Dominic noticing and typing. Required forces an
   // answer to each; null is still the right answer when the verdict is not
   // blocked.
-  required: ["verdict", "summary", "blocker", "needFromDominic", "choices"],
+  required: ["verdict", "summary", "accessRequest", "blocker", "needFromDominic", "choices"],
   additionalProperties: false,
 } as const;
 
@@ -960,6 +1052,9 @@ export class Orchestrator {
   /** Agents forged per goal (keyed by goal id, or the room id before a goal exists). */
   private readonly spawned = new Map<string, number>();
 
+  /** Per-goal grants Dominic allowed with "Allow for this goal", taken back when it closes. */
+  private readonly tempGrants = new Map<string, Array<{ agentId: string; dirs: string[]; allow: string[] }>>();
+
   private readonly runs = new Map<string, { abort: AbortController; state: RunState }>();
 
   private readonly emit: Emit;
@@ -1182,31 +1277,9 @@ export class Orchestrator {
     if (/^\s*\[relayed via/i.test(humanText)) return refuse("only a message Dominic types into the room can grant access.");
     if (!LOOK_WORDS.test(humanText)) return refuse("Dominic's message did not ask the room to look at anything.");
 
-    let grant: { tools?: string[]; dirs?: string[]; allow?: string[] };
-    let label: string;
-    if (request.kind === "kooyapedia") {
-      grant = KOOYAPEDIA_GRANT;
-      label = "KooyaPedia";
-    } else {
-      const wanted = toWslPath(request.path ?? "");
-      if (!wanted.startsWith("/")) return refuse(`"${request.path}" is not an absolute folder path.`);
-      if (!existsSync(wanted)) return refuse(`"${wanted}" does not exist as seen from WSL.`);
-      let real: string;
-      try {
-        real = realpathSync(wanted);
-      } catch {
-        return refuse(`"${wanted}" cannot be resolved.`);
-      }
-      if (!statSync(real).isDirectory()) return refuse(`"${real}" is a file, not a folder.`);
-      if (real === config.root || real.startsWith(config.root + "/")) {
-        return refuse("the agora repo itself is never opened to a room — it holds the .env.");
-      }
-      if (!ACCESS_ROOTS.some((r) => real === r || real.startsWith(r + "/"))) {
-        return refuse(`"${real}" is outside the folders a room may be given (${ACCESS_ROOTS.join(", ")}).`);
-      }
-      grant = { tools: ["Read", "Glob", "Grep"], dirs: [real] };
-      label = real;
-    }
+    const resolved = resolveGrant(request.kind, request.path);
+    if ("error" in resolved) return refuse(resolved.error);
+    const { grant, label } = resolved;
 
     const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
     const targets = (named.length ? named : roster.map((a) => a.id)).filter((id) => id !== orchestrator.id || named.includes(id));
@@ -1245,6 +1318,123 @@ export class Orchestrator {
         kind: "notice",
         text: `Read-only. Never open or quote a .env* file under ${label}; anything said here can reach WhatsApp.`,
       });
+    }
+  }
+
+  /**
+   * The room hit a permission wall and said so in `accessRequest`. Put the
+   * question to Dominic as buttons — Allow for this goal, Always allow, Deny —
+   * and pause the run. The grant rides on the button, so what he taps is what
+   * gets applied, byte for byte. Returns true when the run must stop and wait.
+   */
+  private askAccess(opts: {
+    roomId: string;
+    room: Room;
+    state: RunState;
+    roster: Agent[];
+    agents: Map<string, Agent>;
+    request: AccessAsk;
+  }): boolean {
+    const { roomId, room, state, roster, agents, request } = opts;
+    const resolved = resolveGrant(request.kind, request.path);
+    if ("error" in resolved) {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `Access request dropped: ${resolved.error}` });
+      return false;
+    }
+    const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
+    const targets = named.length ? named : roster.filter((a) => a.id !== room.orchestratorId).map((a) => a.id);
+    if (!targets.length) return false;
+    const already = targets.every((id) => {
+      const a = agents.get(id);
+      if (!a) return false;
+      if (request.kind === "kooyapedia") return a.allow.some((x) => x.includes("kooyapedia-lookup.sh"));
+      return a.addDirs.includes(resolved.label);
+    });
+    if (already) {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `${targets.join(", ")} already ${targets.length === 1 ? "has" : "have"} access to ${resolved.label} — carry on.` });
+      return false;
+    }
+    const who = targets.map((id) => agents.get(id)?.name ?? id).join(", ");
+    const base = { kind: request.kind, path: request.path, agents: targets, goalId: state.goalId };
+    const choices: Choice[] = [
+      {
+        label: "Allow for this goal",
+        detail: `${who} can read ${resolved.label} until this goal closes.`,
+        grant: { ...base, scope: "goal" },
+      },
+      {
+        label: "Always allow",
+        detail: `${who} keep read access to ${resolved.label}; written into ${targets.length === 1 ? "its" : "their"} file.`,
+        grant: { ...base, scope: "always" },
+      },
+      { label: "Deny", detail: "The room carries on without it and says what it could not check.", grant: null },
+    ];
+    const text =
+      `🔐 Kailangan ni ${who} ng read access sa ${resolved.label} para ituloy.` +
+      (cleanField(request.reason) ? `\n${cleanField(request.reason)}` : "") +
+      `\nPayag ka? Tap one below.`;
+    this.post({ roomId, authorId: room.orchestratorId, kind: "handoff", text, directedBy: null, choices });
+    this.recordNotify(roomId, withRoles(text + "\n\n1. Allow for this goal\n2. Always allow\n3. Deny", roster), "escalation");
+    state.stopReason = "blocked";
+    return true;
+  }
+
+  /**
+   * Dominic tapped a button on an access request. Apply what rode on it, then
+   * pick the goal back up. "Deny" is a notice and nothing else.
+   */
+  async decideAccess(roomId: string, grant: AccessGrant | null, label: string): Promise<void> {
+    const room = getRoom(roomId);
+    if (!room) return;
+    if (!grant || /^deny/i.test(label)) {
+      this.post({ roomId, authorId: "system", kind: "event", text: `access denied by Dominic · ${label}` });
+      return;
+    }
+    const agents = this.getAgents();
+    const roster = room.members.map((id) => agents.get(id)).filter((a): a is Agent => a !== undefined);
+    const orchestrator = agents.get(room.orchestratorId) ?? roster[0];
+    if (!orchestrator) return;
+    const resolved = resolveGrant(grant.kind, grant.path);
+    if ("error" in resolved) {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `Access not granted: ${resolved.error}` });
+      return;
+    }
+    this.applyAccess({
+      roomId,
+      orchestrator,
+      roster,
+      agents,
+      humanText: `i-access (Dominic tapped "${label}")`,
+      request: { kind: grant.kind, path: grant.path, agents: grant.agents },
+    });
+    if (grant.scope === "goal" && grant.goalId) {
+      const list = this.tempGrants.get(grant.goalId) ?? [];
+      for (const id of grant.agents) {
+        list.push({ agentId: id, dirs: resolved.grant.dirs ?? [], allow: resolved.grant.allow ?? [] });
+      }
+      this.tempGrants.set(grant.goalId, list);
+    }
+    if (grant.goalId) await this.start(roomId, "", grant.goalId);
+  }
+
+  /** Take back every "Allow for this goal" grant once the goal is genuinely over. */
+  private revokeTemp(goalId: string, roomId: string): void {
+    const list = this.tempGrants.get(goalId);
+    if (!list?.length) return;
+    this.tempGrants.delete(goalId);
+    const returned: string[] = [];
+    for (const g of list) {
+      try {
+        const updated = revokeAccess(g.agentId, { dirs: g.dirs, allow: g.allow });
+        gitCommitFile(updated.file, `access(${g.agentId}): goal closed, per-goal grant returned`, "dominic");
+        returned.push(updated.name);
+      } catch (err) {
+        console.error("[access] revoke failed:", err instanceof Error ? err.message : err);
+      }
+    }
+    if (returned.length) {
+      this.emit({ type: "agents", agents: [...this.getAgents().values()] });
+      this.post({ roomId, authorId: "system", kind: "event", text: `access returned · ${returned.join(", ")} · goal closed` });
     }
   }
 
@@ -1317,6 +1507,9 @@ export class Orchestrator {
     effort?: string;
     /** Override the agent's model: the length guard compresses on the cheap one. */
     model?: string;
+    /** Per-goal tailoring for this agent, when the run has a goal that carries one. */
+    tailor?: Tailor | null;
+    goalTitle?: string | null;
     prompt: string;
     schema?: object;
     signal: AbortSignal;
@@ -1365,6 +1558,8 @@ export class Orchestrator {
     // produced it; before/after comparisons of a prompt edit group on this.
     const systemPrompt = buildSystemPrompt(opts.agent, opts.roomName, opts.roster, {
       chatTurn: opts.chatTurn,
+      tailor: opts.tailor ?? null,
+      goalTitle: opts.goalTitle ?? null,
     });
     const promptSha = createHash("sha1").update(systemPrompt).digest("hex").slice(0, 12);
 
@@ -1561,6 +1756,7 @@ export class Orchestrator {
         turn: state.turn,
       });
 
+      const goal = state.goalId ? getGoal(state.goalId) : null;
       const result = await this.runTurn({
         agent: speaker,
         roomName: room.name,
@@ -1570,6 +1766,8 @@ export class Orchestrator {
         busyPhase: "generating",
         // A position in a conversation, not an investigation.
         effort: "low",
+        tailor: goal?.tailor?.[speaker.id] ?? null,
+        goalTitle: goal?.title ?? null,
         prompt: [
           renderRoomView({
             roomId,
@@ -1671,6 +1869,7 @@ export class Orchestrator {
       turn: state.turn,
     });
 
+    const goal = state.goalId ? getGoal(state.goalId) : null;
     const result = await this.runTurn({
       agent,
       roomName: room.name,
@@ -1678,6 +1877,8 @@ export class Orchestrator {
       roomId,
       signal,
       busyPhase: "generating",
+      tailor: goal?.tailor?.[agent.id] ?? null,
+      goalTitle: goal?.title ?? null,
       prompt: [
         // Split at this agent's own last message, so it can tell what it has
         // already answered from what arrived while it was away.
@@ -2004,6 +2205,7 @@ export class Orchestrator {
       blocker?: string | null;
       needFromDominic?: string | null;
       choices?: Choice[] | null;
+      accessRequest?: AccessAsk | null;
     } | null;
 
     // Before anything else: make the board match what actually happened. This
@@ -2041,6 +2243,12 @@ export class Orchestrator {
     if (out.verdict === "done") {
       state.stopReason = "done";
       return false;
+    }
+
+    // A structured access request beats a prose blocker: buttons, not a paragraph.
+    if (out.accessRequest) {
+      const wait = this.askAccess({ roomId, room, state, roster, agents, request: out.accessRequest });
+      if (wait) return false;
     }
 
     // blocked — but first, is it true? A claim that the room lacks a capability
@@ -2216,6 +2424,165 @@ export class Orchestrator {
    * Run the room. With `resumeGoalId` the run picks up an existing goal
    * instead of planning a new one from `humanText`.
    */
+  /**
+   * A direct message to one agent: "@fury …" in the composer.
+   *
+   * No planner, no goal, no orchestrator turn — Dominic named who he is
+   * talking to. The agent sees the room as usual and is told the message is
+   * to it alone. Look-words keep its tools on; a folder or KooyaPedia named
+   * in the message is granted first, the same way a room message grants it.
+   */
+  async direct(roomId: string, to: string, humanText: string): Promise<void> {
+    if (this.runs.has(roomId)) {
+      this.emit({ type: "error", roomId, detail: "A run is active in this room — wait for it, or stop it, then send again." });
+      return;
+    }
+    const room = getRoom(roomId);
+    if (!room) {
+      this.emit({ type: "error", roomId, detail: "Room not found." });
+      return;
+    }
+    const agents = this.getAgents();
+    const roster = room.members.map((id) => agents.get(id)).filter((a): a is Agent => a !== undefined);
+    const orchestrator = agents.get(room.orchestratorId) ?? roster[0];
+    const needle = to.trim().toLowerCase();
+    let agent =
+      resolveNext(needle, roster) ??
+      roster.find((a) => a.name.toLowerCase().replace(/\s+/g, "-") === needle) ??
+      roster.find((a) => a.name.toLowerCase().split(/\s+/)[0] === needle) ??
+      null;
+    if (!agent || !orchestrator) {
+      this.emit({
+        type: "error",
+        roomId,
+        detail: `No agent called "${to}" in this room. Members: ${roster.map((a) => a.id).join(", ")}.`,
+      });
+      return;
+    }
+
+    this.post({ roomId, authorId: "human", kind: "human", text: `@${agent.id} ${humanText}` });
+
+    const asksToLook = LOOK_WORDS.test(humanText);
+    if (asksToLook) {
+      const inferred = inferAccess(humanText);
+      if (inferred) {
+        this.applyAccess({
+          roomId,
+          orchestrator,
+          roster,
+          agents,
+          humanText,
+          request: { ...inferred, agents: [agent.id] },
+        });
+        agent = agents.get(agent.id) ?? agent;
+      }
+    }
+    const lookup = asksToLook && agent.tools.length > 0;
+
+    const abort = new AbortController();
+    const state: RunState = {
+      roomId,
+      goalId: null,
+      active: true,
+      turn: 1,
+      maxTurns: 1,
+      startedAt: Date.now(),
+      speaking: agent.id,
+      costUsd: 0,
+      stopReason: null,
+      phase: "generating",
+      phaseDetail: null,
+      timeoutMs: config.turnTimeoutMs,
+      turnStartedAt: null,
+      lastTurnMs: null,
+      lastTurnCostUsd: null,
+    };
+    this.runs.set(roomId, { abort, state });
+    this.publishRun(state);
+    this.emit({ type: "turn_start", roomId, agentId: agent.id, directedBy: "human", turn: 1 });
+    try {
+      const reply = await this.runTurn({
+        agent,
+        chatTurn: !lookup,
+        ...(lookup ? {} : { effort: "low" }),
+        roomName: room.name,
+        roster,
+        roomId,
+        signal: abort.signal,
+        busyPhase: "generating",
+        prompt: [
+          mindStoneText(roomId),
+          `Room transcript so far:`,
+          "---",
+          renderTranscript(listMessages(roomId, config.transcriptWindow), agents) || "(empty)",
+          "---",
+          "",
+          `Dominic messaged YOU directly, not the room:`,
+          "---",
+          humanText,
+          "---",
+          "",
+          lookup
+            ? `Go and look at exactly what you need — the file, the wiki, the page — then answer from what you actually saw, with the path, slug or URL inline.`
+            : `Answer from what you already know.`,
+          asksToLook && !lookup
+            ? `He asked you to look at something and nothing you hold in this room can open it. ` +
+              `Say so in one plain sentence and name what would let you — a folder he can open ` +
+              `by saying "i-access mo ang <path>", or "tignan mo ang KooyaPedia" — then stop.`
+            : ``,
+          `Reply to him in at most three sentences, Taglish, as one chat message. No \`kind:\` or \`@next:\` markers — this is a direct message, nobody is handed the floor.`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      });
+      this.emit({ type: "turn_end", roomId, agentId: agent.id });
+      if (reply.costUsd) state.costUsd += reply.costUsd;
+      state.lastTurnCostUsd = reply.costUsd;
+      state.lastTurnMs = reply.durationMs;
+      if (reply.timedOut) {
+        this.post({ roomId, authorId: "system", kind: "notice", text: `${agent.name} ran past the turn limit and was cut off.` });
+      } else if (reply.text.trim()) {
+        const guarded = await this.enforceLength({
+          agent,
+          roomName: room.name,
+          roster,
+          roomId,
+          signal: abort.signal,
+          text: reply.text,
+        });
+        if (guarded.costUsd) state.costUsd += guarded.costUsd;
+        this.post({
+          roomId,
+          authorId: agent.id,
+          kind: "agent",
+          text: guarded.text,
+          directedBy: "human",
+          costUsd: sumCost(reply.costUsd, guarded.costUsd),
+          durationMs: reply.durationMs,
+          promptSha: reply.promptSha,
+        });
+        const answer = withRoles(`💬 ${agent.name} → Dominic:\n\n${guarded.text.slice(0, 1500)}`, roster);
+        void notify(roomId, answer, { force: true, kind: "chatter" }).then((r) => {
+          this.post({ roomId, authorId: "system", kind: "notify", text: answer, delivered: r.delivered });
+        });
+      } else {
+        this.post({ roomId, authorId: "system", kind: "notice", text: `${agent.name} returned nothing.` });
+      }
+      state.stopReason = "done";
+    } catch (err) {
+      state.stopReason = "error";
+      const detail = err instanceof Error ? err.message : String(err);
+      this.emit({ type: "error", roomId, detail });
+    } finally {
+      state.active = false;
+      state.speaking = null;
+      state.phase = null;
+      this.publishRun(state);
+      this.runs.delete(roomId);
+      this.emit({ type: "runs", runs: this.listRuns() });
+    }
+  }
+
   async start(roomId: string, humanText: string, resumeGoalId?: string): Promise<void> {
     if (this.runs.has(roomId)) {
       this.emit({ type: "error", roomId, detail: "A run is already active in this room." });
@@ -2377,6 +2744,13 @@ export class Orchestrator {
 
         const plan = (planResult.structured ?? null) as Plan | null;
 
+        // The planner's call, with the same backstop a direct message gets:
+        // "tignan mo ang KooyaPedia" or a folder path plus a look-word is a
+        // grant whether or not the planner noticed.
+        if (plan && !plan.access && LOOK_WORDS.test(humanText)) {
+          const inferred = inferAccess(humanText);
+          if (inferred) plan.access = { ...inferred, agents: plan.responder ? [plan.responder] : [] };
+        }
         if (plan?.access && !abort.signal.aborted) {
           this.applyAccess({ roomId, orchestrator, roster, agents, humanText, request: plan.access });
         }
@@ -2568,8 +2942,31 @@ export class Orchestrator {
             ownerId: resolveNext(s.owner, roster)?.id ?? null,
           }));
           if (steps.length > 0) {
-            const goal = createGoal({ roomId, title: plan.goal, steps });
+            let goal = createGoal({ roomId, title: plan.goal, steps });
             state.goalId = goal.id;
+            const tailorMap: Record<string, Tailor> = {};
+            for (const t of plan.tailor ?? []) {
+              const who = resolveNext(t.agent, roster);
+              if (!who || who.id === orchestrator.id) continue;
+              const entry: Tailor = {
+                skills: cleanField(t.skills) || null,
+                instructions: cleanField(t.instructions) || null,
+                personality: cleanField(t.personality) || null,
+              };
+              if (entry.skills || entry.instructions || entry.personality) tailorMap[who.id] = entry;
+            }
+            if (Object.keys(tailorMap).length) {
+              goal = setGoalTailor(goal.id, tailorMap) ?? goal;
+              for (const [id, t] of Object.entries(tailorMap)) {
+                const who = agents.get(id);
+                this.post({
+                  roomId,
+                  authorId: "system",
+                  kind: "event",
+                  text: `tailored · ${who?.name ?? id} for this goal · ${(t.skills ?? t.instructions ?? t.personality ?? "").slice(0, 100)}`,
+                });
+              }
+            }
             this.emit({ type: "goal", goal });
             this.publishRun(state);
             this.post({
@@ -2785,6 +3182,18 @@ export class Orchestrator {
             durationMs: decisionResult.durationMs,
             promptSha: decisionResult.promptSha,
           });
+        }
+
+        if (decision.accessRequest) {
+          const wait = this.askAccess({
+            roomId,
+            room,
+            state,
+            roster,
+            agents,
+            request: decision.accessRequest,
+          });
+          if (wait) break;
         }
 
         if (decision.spawn) {
@@ -3022,6 +3431,7 @@ export class Orchestrator {
       // it finished, whatever they called it.
       //
       // So: unfinished board + a stop that was not a human decision = carry on.
+      let resumedNow = false;
       const NEVER_RESUME = new Set(["stopped", "blocked"]);
       if (state.goalId && !NEVER_RESUME.has(state.stopReason ?? "")) {
         const goal = getGoal(state.goalId);
@@ -3030,6 +3440,7 @@ export class Orchestrator {
         const goalId = state.goalId;
         if (goal && goal.status !== "done" && open > 0 && spent < config.maxAutoResumes) {
           this.resumes.set(goalId, spent + 1);
+          resumedNow = true;
           this.post({
             roomId,
             authorId: "system",
@@ -3063,6 +3474,10 @@ export class Orchestrator {
       if (state.goalId) {
         const g = getGoal(state.goalId);
         if (g?.status === "done") this.resumes.delete(state.goalId);
+        // A run paused on an access button holds no per-goal grant yet, so
+        // there is nothing to return; a goal that is over, or stopped by a
+        // human, hands its per-goal grants back.
+        if (!resumedNow && state.stopReason !== "blocked") this.revokeTemp(state.goalId, roomId);
       }
 
       const elapsed = Date.now() - state.startedAt;

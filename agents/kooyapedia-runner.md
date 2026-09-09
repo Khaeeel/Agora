@@ -5,11 +5,11 @@ effort: medium
 # Web research and the ECC library, nothing else: no filesystem outside the
 # lookup wrapper, no edits, no jobs. WebFetch is read-only by construction;
 # ecc-lookup.sh is read-only by construction. See L0 "Sources you fetch".
-tools: ["WebSearch", "WebFetch", "Bash"]
-allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)"]
 # Forged from templates/agents/researcher.md. Capabilities above are the template's.
 forged_by: fury
 forged_at: 2026-09-09T08:34:39.550Z
+tools: ["WebSearch", "WebFetch", "Bash"]
+allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"]
 ---
 
 # Agent: Kooya Runner

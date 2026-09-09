@@ -37,12 +37,27 @@ export interface Agent {
   forgedBy: string | null;
 }
 
+/**
+ * A read-access grant attached to a button. When Dominic taps it, the server
+ * applies exactly this — never something the model rewrote in between.
+ */
+export interface AccessGrant {
+  kind: "dir" | "kooyapedia";
+  path: string | null;
+  agents: string[];
+  /** goal = taken back when the goal closes; always = stays in the agent's file. */
+  scope: "goal" | "always";
+  goalId: string | null;
+}
+
 /** One option on a question the room is putting to Dominic. */
 export interface Choice {
   /** What the button says. Short — it is the decision, not the reasoning. */
   label: string;
   /** One line under it: what picking this actually means. */
   detail: string;
+  /** Set on Allow / Always allow buttons of an access request. */
+  grant?: AccessGrant | null;
 }
 
 export type MessageKind = "human" | "agent" | "notice" | "notify" | "handoff" | "event";
@@ -138,6 +153,17 @@ export interface Step {
   updatedAt: number;
 }
 
+/**
+ * How one agent is tailored for one goal. Prompt text only, layered on top of
+ * the agent's standing sections for the life of the goal and never written to
+ * its file — the objective changes, the file does not.
+ */
+export interface Tailor {
+  skills?: string | null;
+  instructions?: string | null;
+  personality?: string | null;
+}
+
 export interface Goal {
   id: string;
   roomId: string;
@@ -150,6 +176,8 @@ export interface Goal {
   handoff: string | null;
   /** Manual steps to see the problem first-hand, before trusting the diagnosis. */
   verify: string | null;
+  /** Per-agent tailoring for this goal, keyed by agent id. Null when none. */
+  tailor: Record<string, Tailor> | null;
   steps: Step[];
 }
 

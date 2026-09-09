@@ -281,6 +281,12 @@ export async function buildServer(): Promise<
 
       if (cmd.type === "broadcast") {
         if (!cmd.text?.trim()) return;
+        // "@fury …" is a direct message to one agent: no planner, no goal.
+        const dm = cmd.text.trim().match(/^@([a-z0-9][a-z0-9_-]*)\s+([\s\S]+)$/i);
+        if (dm) {
+          void orchestrator.direct(cmd.roomId, dm[1]!, dm[2]!.trim());
+          return;
+        }
         void orchestrator.start(cmd.roomId, cmd.text.trim());
       } else if (cmd.type === "answer") {
         // Answering IS the unblocking instruction, so it goes in as a normal
@@ -296,7 +302,13 @@ export async function buildServer(): Promise<
           });
         } else {
           broadcast({ type: "message_update", message: answered });
-          void orchestrator.start(cmd.roomId, cmd.label);
+          // An access button carries its grant; every other button is an answer.
+          const picked = answered.choices?.find((c) => c.label === cmd.label);
+          if (picked && "grant" in picked) {
+            void orchestrator.decideAccess(cmd.roomId, picked.grant ?? null, cmd.label);
+          } else {
+            void orchestrator.start(cmd.roomId, cmd.label);
+          }
         }
       } else if (cmd.type === "resume") {
         void orchestrator.start(cmd.roomId, "", cmd.goalId);
