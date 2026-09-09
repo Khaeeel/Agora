@@ -99,11 +99,29 @@ function compose(text: string, jid: string): { bin: string; args: string[] } {
  * no JID configured, dry-run mode, and a per-room minimum interval so a
  * runaway loop cannot spam a group full of people.
  */
+/**
+ * What the room writes for itself is not what Dominic reads on his phone.
+ * The three markers and the `[#1282]` citations are a contract between
+ * agents; on WhatsApp they are noise, so they come off here — the one place
+ * every outbound message passes through — and nowhere else. The stored text
+ * keeps them.
+ */
+export function forPhone(text: string): string {
+  return text
+    .replace(/^\s*kind:[^\n]*\n?/im, "")
+    .replace(/\n?\s*@next:[^\n]*\s*$/im, "")
+    .replace(/\s*\[#\d+\]/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ ([,.;:!?])/g, "$1")
+    .trim();
+}
+
 export async function notify(
   roomId: string,
-  text: string,
+  rawText: string,
   opts: { force?: boolean; kind?: NotifyKind } = {},
 ): Promise<NotifyResult> {
+  const text = forPhone(rawText);
   const jid = jidForRoom(roomId);
   const kind = opts.kind ?? "chatter";
   const { bin, args } = compose(text, jid);

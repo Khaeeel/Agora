@@ -36,6 +36,10 @@ function displayText(text: string): string {
   return text
     .replace(/^\s*kind:[^\n]*\n?/i, "")
     .replace(/\n?\s*@next:[^\n]*\s*$/i, "")
+    // `[#1282]` citations are for agents citing each other, not for reading.
+    .replace(/\s*\[#\d+\]/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ ([,.;:!?])/g, "$1")
     .trim();
 }
 
@@ -76,7 +80,7 @@ function Decision({
           {answered ? "You chose" : "The room needs a decision"}
         </span>
       </div>
-      <div className="decision__body">{m.text}</div>
+      <div className="decision__body">{displayText(m.text)}</div>
       <div className="decision__options">
         {(m.choices ?? []).map((c) => {
           const picked = answered === c.label;
@@ -162,7 +166,7 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
                   Copy
                 </button>
               </div>
-              <pre className="handoff__body">{m.text}</pre>
+              <pre className="handoff__body">{displayText(m.text)}</pre>
             </div>
           );
         }
@@ -184,14 +188,14 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
                 {m.delivered ? (
                   <details className="notify__fold">
                     <summary className="notify__label">Sent to WhatsApp</summary>
-                    <span className="notify__body">{m.text}</span>
+                    <span className="notify__body">{displayText(m.text)}</span>
                   </details>
                 ) : (
                   <>
                     <span className="notify__label">
                       WhatsApp update — not sent
                     </span>
-                    <span className="notify__body">{m.text}</span>
+                    <span className="notify__body">{displayText(m.text)}</span>
                   </>
                 )}
               </span>
