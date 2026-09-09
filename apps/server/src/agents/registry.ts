@@ -3,13 +3,13 @@ import { join, basename } from "node:path";
 import { parse as parseYaml } from "yaml";
 import chokidar from "chokidar";
 import { config } from "../config.ts";
-import { protocolText } from "../protocol.ts";
+import { phoneStyleText, protocolText } from "../protocol.ts";
 import type { Agent } from "../types.ts";
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 /** Pull `## Heading` sections out of the markdown body. */
-function sections(body: string): Map<string, string> {
+export function sections(body: string): Map<string, string> {
   const out = new Map<string, string>();
   const parts = body.split(/^##\s+/m);
   for (const part of parts.slice(1)) {
@@ -295,6 +295,9 @@ export function buildSystemPrompt(
     // Emitted from protocol.ts rather than read from a file — see the note there
     // on why this is a contract and not a convention.
     `${protocolText()}\n`,
+    // The phone style guide goes to the one role that writes phone messages.
+    // Every specialist used to pay for it on every turn.
+    agent.orchestrator && `${phoneStyleText()}\n`,
     // L2 — room rules sit AFTER the protocol so the shared text stays a stable
     // cache prefix across every room.
     roomRules && `${roomRules}\n`,
@@ -308,12 +311,6 @@ export function buildSystemPrompt(
     agent.personality && `## Your voice\n${agent.personality}`,
     others && `## Others in this room\n${others}`,
     "",
-    "## Room rules",
-    "- You are speaking into a shared room. Everyone sees everything.",
-    "- Write one message. Do not roleplay other agents or write their replies.",
-    "- Be brief. This is a chat, not a document. No headings, no bullet walls.",
-    "- Do not greet, do not sign off, do not restate the question.",
-    "",
     // Without this, agents invent capabilities they do not have ("I only have a
     // browser") instead of stating the gap accurately.
     // A chat turn switches tools off for ONE reply. Saying "you have no tools"
@@ -325,14 +322,10 @@ export function buildSystemPrompt(
       ? [
           "## This turn is a conversation, not a task",
           "Dominic asked you directly, so your tools are switched OFF for this one",
-          "reply. Answer from what you already know.",
-          "",
-          "That is NOT the same as the room being unable to act. The room's",
-          "capabilities are exactly as described above and have not changed. Never",
-          "tell Dominic the room cannot do something it can — if the answer needs",
-          "work, say what you would do and that he only has to ask for it.",
-          "The one thing you must not do is claim you looked anything up this turn,",
-          "because you did not.",
+          "reply. Answer from what you already know. Off for this reply is not the",
+          "same as absent: the room's capabilities are exactly as described above.",
+          "Never tell Dominic the room cannot do something it can, and never claim",
+          "you looked anything up this turn, because you did not.",
         ].join("\n")
       : "## What you can actually do right now",
     !opts.chatTurn && agent.tools.length === 0 && agent.mcp.length === 0

@@ -93,6 +93,12 @@ export interface Message {
   refs: number[];
   /** Who the author says should go next, or "none". Null when unstated. */
   nextId: string | null;
+  /**
+   * Short sha1 of the exact system prompt (L0 + room rules + agent file) this
+   * turn ran under. "Before and after this prompt edit" is a GROUP BY on it.
+   * Null on rows the system wrote on an agent's behalf.
+   */
+  promptSha: string | null;
 }
 
 export interface Room {

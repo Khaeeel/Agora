@@ -42,6 +42,9 @@ export interface Message {
   choices: Choice[] | null;
   /** The label he picked, once he has. Null while the question is open. */
   answeredWith: string | null;
+  /** Parsed markers: the speech act and who the author handed to. */
+  act?: string | null;
+  nextId?: string | null;
 }
 
 export interface Room {

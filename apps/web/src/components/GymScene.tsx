@@ -7,7 +7,16 @@ import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import type { Agent, AgentMemory, AgentStatus } from "../lib/types.ts";
 import { bulkOf, compactCount, tierOf } from "../lib/memory.ts";
-import { SPRITE_H, SPRITE_W, characterCanvas, matCanvas, type Pose } from "../lib/spriteArt.ts";
+import {
+  ALL_POSES,
+  REP_FRAMES,
+  SPRITE_H,
+  SPRITE_W,
+  characterCanvas,
+  matCanvas,
+  type Exercise,
+  type Pose,
+} from "../lib/spriteArt.ts";
 
 /**
  * The gym floor, HD-2D.
@@ -53,6 +62,15 @@ const CHAR_H = 2.8;
 const CHAR_W = (SPRITE_W / SPRITE_H) * CHAR_H;
 
 type Kind = "bench" | "squat" | "dumbbell" | "tread";
+
+/** Each machine implies its exercise. A floor of identical presses read as a
+ *  drill rather than a gym. */
+const EXERCISE_FOR: Record<Kind, Exercise> = {
+  bench: "press",
+  squat: "squat",
+  dumbbell: "curl",
+  tread: "run",
+};
 const KINDS: Kind[] = ["squat", "bench", "tread", "dumbbell", "squat", "bench", "tread", "dumbbell", "squat"];
 
 interface Station {
@@ -67,6 +85,7 @@ interface Actor {
   name: string;
   color: string;
   bulk: number;
+  exercise: Exercise;
   sprite: THREE.Sprite;
   textures: Record<Pose, THREE.Texture>;
   station: Station;
@@ -433,6 +452,29 @@ export function GymScene({
       castCols = columnsFor(Math.max(ms.length, 1), aspect);
       const spots = stationSpots(Math.max(ms.length, 1), aspect);
 
+      /*
+       * Two readings of the same number, blended.
+       *
+       * Absolute bulk alone was the honest answer and the wrong picture. Agents
+       * in one room tend to sit within a few multiples of each other — Voicemail
+       * runs 16k to 43k — and on an absolute 1k-to-400k scale that whole room
+       * lands inside a band two pixels wide. Nothing visibly grew, which is the
+       * one thing this panel exists to show.
+       *
+       * So the drawing takes 40% from the absolute scale, which is what makes a
+       * whole room bigger as it accumulates, and 60% from the agent's standing
+       * WITHIN this room, which guarantees a visible pecking order even when the
+       * totals are close. The tier label on hover stays purely absolute.
+       */
+      const bulks = ms.map((id) => bulkOf((mem[id] ?? { chars: 0 }).chars));
+      const lo = Math.min(...bulks, 1);
+      const hi = Math.max(...bulks, 0);
+      const span = hi - lo;
+      const visualOf = (abs: number): number => {
+        const rel = span > 0.02 ? (abs - lo) / span : 0.5;
+        return Math.max(0, Math.min(1, 0.4 * abs + 0.6 * rel));
+      };
+
       // Stations sit at the back of each character's patch and the rest spot is
       // 6.5 in front of it, so the occupied ground runs from the first station
       // to the last rest position.
@@ -451,6 +493,7 @@ export function GymScene({
         const agent = am.get(id);
         const color = agent?.color ?? "#59627c";
         const bulk = bulkOf((mem[id] ?? { chars: 0 }).chars);
+        const visual = visualOf(bulk);
         const kind = KINDS[i % KINDS.length] ?? "bench";
 
         const g = buildStation(kind, frameMat, padMat);
@@ -465,10 +508,9 @@ export function GymScene({
         const station: Station = { x: spot.x, z: spot.z, kind, light };
         stations.push(station);
 
-        const poses: Pose[] = ["stand", "pressUp", "pressDown", "walkA", "walkB", "sit"];
         const textures = {} as Record<Pose, THREE.Texture>;
-        for (const p of poses) {
-          const t = new THREE.CanvasTexture(characterCanvas(color, bulk, p));
+        for (const p of ALL_POSES) {
+          const t = new THREE.CanvasTexture(characterCanvas(color, visual, p));
           // Nearest on both filters. Anything else smooths the art pixels and
           // the sprite stops looking pixelled, which is the entire style.
           t.magFilter = THREE.NearestFilter;
@@ -482,15 +524,13 @@ export function GymScene({
           new THREE.SpriteMaterial({ map: textures.stand, transparent: true }),
         );
         /*
-         * Two channels carry the same number, because one was not enough.
-         *
-         * The drawing is 44 pixels wide, so between two agents whose memory
-         * differs by 2.7x the torso changes by one or two pixels — true to the
-         * data and invisible on screen. Scaling the whole sprite in world space
-         * as well turns that into a difference you can see across the room,
-         * which is the entire job of this panel.
+         * The drawing and the world scale carry the same number, because one was
+         * not enough. Forty-four pixels of canvas can only express so much
+         * difference in a torso; scaling the whole sprite as well turns it into
+         * something you can see from across the room. Smallest to largest in any
+         * room is now roughly three to one.
          */
-        const sizeK = 0.62 + 0.85 * bulk;
+        const sizeK = 0.55 + 1.15 * visual;
         sprite.scale.set(CHAR_W * sizeK, CHAR_H * sizeK, 1);
         scene.add(sprite);
 
@@ -507,7 +547,8 @@ export function GymScene({
           id,
           name: agent?.name ?? id,
           color,
-          bulk,
+          bulk: visual,
+          exercise: EXERCISE_FOR[kind],
           sprite,
           textures,
           station,
@@ -585,12 +626,15 @@ export function GymScene({
 
         // Rate is the status. Mid-turn is a hard set, just-finished is a
         // working pace, idle is a slow warm-up — but nobody is standing around.
-        const rate = working ? 5.4 : status === "active" ? 2.9 : 1.5;
+        // Running is a faster cadence than a lift at every one of those.
+        const base = working ? 5.4 : status === "active" ? 2.9 : 1.5;
+        const rate = a.exercise === "run" ? base * 1.9 : base;
+        const [up, down] = REP_FRAMES[a.exercise];
 
         let pose: Pose;
         if (status === "offline") pose = "sit";
         else if (moving) pose = Math.sin(t * 9 + a.phase) > 0 ? "walkA" : "walkB";
-        else pose = Math.sin(t * rate + a.phase) > 0 ? "pressUp" : "pressDown";
+        else pose = Math.sin(t * rate + a.phase) > 0 ? up : down;
 
         const tex = a.textures[pose];
         if (a.sprite.material.map !== tex) {

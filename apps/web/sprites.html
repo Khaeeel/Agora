@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>sprite proof sheet</title>
+    <style>
+      body { background: #0b0f1c; color: #dce3f2; font: 11px ui-monospace, monospace; margin: 12px; }
+      table { border-collapse: collapse; }
+      th { color: #a78bfa; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+           font-size: 10px; padding: 0 6px 6px; }
+      td { padding: 2px; }
+      td.lab { color: #8c97b4; text-align: right; padding-right: 8px; white-space: nowrap; }
+      canvas { image-rendering: pixelated; background: #12182a; display: block; }
+    </style>
+  </head>
+  <body>
+    <table id="out"></table>
+    <script type="module">
+      import { characterCanvas, SPRITE_W, SPRITE_H } from "/src/lib/spriteArt.ts";
+
+      const Z = 4;
+      const BULKS = [["small", 0.1], ["mid", 0.5], ["big", 1.0]];
+      const COLS = [
+        ["press", ["pressUp", "pressDown"]],
+        ["squat", ["squatUp", "squatDown"]],
+        ["curl", ["curlUp", "curlDown"]],
+        ["run", ["runA", "runB"]],
+        ["other", ["stand", "walkA", "sit"]],
+      ];
+
+      const t = document.getElementById("out");
+      const head = document.createElement("tr");
+      head.innerHTML = "<th></th>" + COLS.map(([n, ps]) => `<th colspan="${ps.length}">${n}</th>`).join("");
+      t.appendChild(head);
+
+      for (const [label, b] of BULKS) {
+        const tr = document.createElement("tr");
+        const lab = document.createElement("td");
+        lab.className = "lab";
+        lab.textContent = label;
+        tr.appendChild(lab);
+        for (const [, poses] of COLS) {
+          for (const pose of poses) {
+            const src = characterCanvas("#a78bfa", b, pose);
+            const c = document.createElement("canvas");
+            c.width = SPRITE_W * Z;
+            c.height = SPRITE_H * Z;
+            const x = c.getContext("2d");
+            x.imageSmoothingEnabled = false;
+            x.drawImage(src, 0, 0, c.width, c.height);
+            const td = document.createElement("td");
+            td.appendChild(c);
+            tr.appendChild(td);
+          }
+        }
+        t.appendChild(tr);
+      }
+    </script>
+  </body>
+</html>

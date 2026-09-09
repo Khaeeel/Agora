@@ -28,6 +28,30 @@ function fmtDuration(ms: number): string {
 }
 
 /**
+ * The `kind:` and `@next:` markers are a contract between agents, not something
+ * Dominic reads. They stay in the stored text — agents see each other's markers
+ * in the transcript, which is how the convention holds — and come off here only.
+ */
+function displayText(text: string): string {
+  return text
+    .replace(/^\s*kind:[^\n]*\n?/i, "")
+    .replace(/\n?\s*@next:[^\n]*\s*$/i, "")
+    .trim();
+}
+
+/** What the markers said, as a small tag instead of two raw lines. */
+function Marks({ m, agents }: { m: Message; agents: Map<string, Agent> }) {
+  if (!m.act && !m.nextId) return null;
+  const next = m.nextId ? (agents.get(m.nextId)?.name ?? m.nextId) : null;
+  return (
+    <span className="chip" title="kind · next">
+      {m.act ?? "?"}
+      {next ? ` → ${next}` : ""}
+    </span>
+  );
+}
+
+/**
  * A question the room is putting to Dominic, with its options as buttons.
  *
  * The room stops dead when it needs a decision from him, and before this the
@@ -202,12 +226,18 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
                     <span className="directed">← {director.name} asked</span>
                   )}
                   <TurnMeta m={m} />
+                  {!human && <Marks m={m} agents={agents} />}
                 </div>
               )}
               <div className={"bubble" + (human ? " bubble--human" : "")}>
-                {m.text}
+                {human ? m.text : displayText(m.text)}
               </div>
-              {tight && <TurnMeta m={m} />}
+              {tight && (
+                <>
+                  <TurnMeta m={m} />
+                  <Marks m={m} agents={agents} />
+                </>
+              )}
             </div>
           </div>
         );
@@ -228,7 +258,7 @@ export function Transcript({ messages, live, agents, onAnswer, busy }: Props) {
                 </span>
               )}
             </div>
-            <div className="bubble caret">{live.text}</div>
+            <div className="bubble caret">{displayText(live.text)}</div>
           </div>
         </div>
       )}

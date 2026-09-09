@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { config } from "./config.ts";
 import {
   addMessage,
@@ -17,7 +18,13 @@ import {
   updateStep,
 } from "./db.ts";
 import { buildSystemPrompt } from "./agents/registry.ts";
-import { PROTOCOL_VERSION, parseMarkers } from "./protocol.ts";
+import {
+  PROTOCOL_VERSION,
+  REPLY_LIMITS,
+  bodyWords,
+  parseMarkers,
+  wordLimitFor,
+} from "./protocol.ts";
 import { ClaudeCliDriver } from "./drivers/claude-cli.ts";
 import { CursorCliDriver } from "./drivers/cursor-cli.ts";
 import { levelForRoom, notify, type NotifyKind } from "./notify.ts";
@@ -104,7 +111,7 @@ const DECISION_SCHEMA = {
   properties: {
     say: {
       type: "string",
-      description: "What you say out loud in the room. One short message.",
+      description: `What you say out loud in the room, Taglish. At most two sentences (about ${REPLY_LIMITS.short} words). No headings, no lists.`,
     },
     next: {
       type: ["string", "null"],
@@ -173,8 +180,15 @@ const DECISION_SCHEMA = {
       description:
         "Set only when a human genuinely needs this on their phone. Otherwise null.",
       properties: {
-        headline: { type: "string" },
-        detail: { type: "string" },
+        headline: {
+          type: "string",
+          description: "One line, plain Taglish: the effect, not the mechanism.",
+        },
+        detail: {
+          type: "string",
+          description:
+            "At most five short lines, plain Taglish. No paths, line numbers, error codes, tool names or acronyms — he reads this on a phone.",
+        },
       },
       required: ["headline", "detail"],
       additionalProperties: false,
@@ -505,8 +519,7 @@ const PROGRESS_SCHEMA = {
     },
     summary: {
       type: "string",
-      description:
-        "Where the goal actually stands right now, in two or three lines: what is finished, what is in flight, what is left. This is what Dominic reads to follow along, so no filler and no restating the goal back to him.",
+      description: `Where the goal actually stands right now, in Taglish, at most ${REPLY_LIMITS.result} words: what is finished, what is in flight, what is left. This is what Dominic reads to follow along, so no filler and no restating the goal back to him.`,
     },
     steps: {
       type: "array",
@@ -701,6 +714,28 @@ function resolveNext(raw: string | null, members: Agent[]): Agent | null {
   );
 }
 
+/**
+ * The last thing a dispatched agent reads before it writes. Recency is the
+ * strongest lever on length there is: the discussion prompt carried ~900 chars
+ * of "this is a chat" and its rooms averaged half the length of the rooms whose
+ * dispatch line was "reply once, in your own voice".
+ */
+function turnInstruction(lead: string): string {
+  return [
+    `${lead} Do whatever the work needs, then reply as ONE chat message, Taglish:`,
+    `what you found or decided, in 1 to 3 plain sentences (about ${REPLY_LIMITS.short} words;`,
+    `${REPLY_LIMITS.result} for a \`result\` with evidence). No headings, no bullets, no summary`,
+    `of what others said. Cite the \`[#id]\` you are answering; end with \`@next:\`.`,
+    `Wala kang idadagdag? Reply \`PASS\`.`,
+  ].join("\n");
+}
+
+/** Two nullable turn costs as one nullable message cost. */
+function sumCost(a: number | null, b: number | null): number | null {
+  if (a == null && b == null) return null;
+  return (a ?? 0) + (b ?? 0);
+}
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   const s = Math.round(ms / 1000);
@@ -883,6 +918,10 @@ export class Orchestrator {
     roster: Agent[];
     /** Tools off for this one reply — see buildSystemPrompt's chatTurn note. */
     chatTurn?: boolean;
+    /** Override the agent's own effort: chat, discussion and rewrite turns run low. */
+    effort?: string;
+    /** Override the agent's model: the length guard compresses on the cheap one. */
+    model?: string;
     prompt: string;
     schema?: object;
     signal: AbortSignal;
@@ -896,6 +935,8 @@ export class Orchestrator {
     isError: boolean;
     timedOut: boolean;
     durationMs: number;
+    /** Identifies the exact system prompt this turn ran under. */
+    promptSha: string;
   }> {
     const run = this.runs.get(opts.roomId);
     if (run && this.gate.saturated) {
@@ -925,6 +966,13 @@ export class Orchestrator {
       turnAbort.abort();
     }, config.turnTimeoutMs);
 
+    // Hashed so a message row can say which L0 + room rules + agent file
+    // produced it; before/after comparisons of a prompt edit group on this.
+    const systemPrompt = buildSystemPrompt(opts.agent, opts.roomName, opts.roster, {
+      chatTurn: opts.chatTurn,
+    });
+    const promptSha = createHash("sha1").update(systemPrompt).digest("hex").slice(0, 12);
+
     try {
       let text = "";
       let structured: unknown = null;
@@ -932,12 +980,10 @@ export class Orchestrator {
       let isError = false;
 
       for await (const event of this.driverFor(opts.busyPhase).run({
-        systemPrompt: buildSystemPrompt(opts.agent, opts.roomName, opts.roster, {
-          chatTurn: opts.chatTurn,
-        }),
+        systemPrompt,
         prompt: opts.prompt,
-        model: opts.agent.model,
-        effort: opts.agent.effort,
+        model: opts.model ?? opts.agent.model,
+        effort: opts.effort ?? opts.agent.effort,
         // Enforcement stays: a chat turn genuinely gets no tools. What changed
         // is that the agent is told they are off for this reply, not absent.
         tools: opts.chatTurn ? [] : opts.agent.tools,
@@ -982,6 +1028,7 @@ export class Orchestrator {
         isError,
         timedOut,
         durationMs: Date.now() - turnStartedAt,
+        promptSha,
       };
     } finally {
       clearTimeout(turnTimer);
@@ -992,6 +1039,78 @@ export class Orchestrator {
       }
       release();
     }
+  }
+
+  /**
+   * Backstop for the length rule.
+   *
+   * L0 states the budget once and the per-turn instruction repeats it, so most
+   * turns land inside it. This catches the ones that do not: one rewrite on the
+   * cheap model with tools off and the same system prompt (so the cache prefix
+   * is hit), asking for the same facts in fewer words. It never truncates —
+   * `@next:` is the last line and the fast path reads it, so cutting text off
+   * would silently break dispatch. If the rewrite is still over, the shorter of
+   * the two posts and the miss is logged so the metric records it.
+   */
+  private async enforceLength(opts: {
+    agent: Agent;
+    roomName: string;
+    roster: Agent[];
+    roomId: string;
+    signal: AbortSignal;
+    text: string;
+  }): Promise<{ text: string; costUsd: number | null }> {
+    const original = opts.text.trim();
+    if (!config.lengthGuard || !original) return { text: original, costUsd: null };
+    const act = parseMarkers(original).act;
+    const limit = wordLimitFor(act);
+    const words = bodyWords(original);
+    const over = words > limit * 1.3 || original.length > REPLY_LIMITS.hardChars;
+    if (!over) return { text: original, costUsd: null };
+
+    const result = await this.runTurn({
+      agent: opts.agent,
+      roomName: opts.roomName,
+      roster: opts.roster,
+      roomId: opts.roomId,
+      signal: opts.signal,
+      chatTurn: true,
+      effort: "low",
+      model: config.model,
+      busyPhase: "generating",
+      prompt: [
+        `You just wrote this reply (${words} words; the room limit for a \`${act ?? "claim"}\` is ${limit}):`,
+        "---",
+        original,
+        "---",
+        "",
+        `Rewrite it as ONE chat message under ${limit} words, Taglish. Keep every fact,`,
+        `number, path and \`[#id]\`. Keep the first-line \`kind:\` and the last-line`,
+        `\`@next:\` exactly as they are. Drop headings, bullets, narration, and any`,
+        `closing checklist. Output only the message.`,
+      ].join("\n"),
+    });
+    const rewritten = result.text.trim();
+    const after = rewritten ? bodyWords(rewritten) : words;
+    const usable =
+      rewritten.length > 0 &&
+      !result.isError &&
+      after < words &&
+      (parseMarkers(rewritten).act !== null || act === null);
+    console.log(
+      JSON.stringify({
+        event: "length",
+        room: opts.roomId,
+        agent: opts.agent.id,
+        act,
+        words,
+        limit,
+        rewritten: usable,
+        after: usable ? after : words,
+        stillOver: (usable ? after : words) > limit * 1.3,
+      }),
+    );
+    return { text: usable ? rewritten : original, costUsd: result.costUsd };
   }
 
   /**
@@ -1054,6 +1173,8 @@ export class Orchestrator {
         roomId,
         signal,
         busyPhase: "generating",
+        // A position in a conversation, not an investigation.
+        effort: "low",
         prompt: [
           renderRoomView({
             roomId,
@@ -1083,12 +1204,10 @@ export class Orchestrator {
               ` others disagreed, say whose argument you are taking and why.`
             : "",
           "",
-          `This is a conversation, not a report. Write like you are typing in a group`,
-          `chat with colleagues you respect: short, direct, no preamble, no "great`,
-          `point", no restating the question back. Two or three sentences is usually`,
-          `right. Nobody is summarising for a manager here.`,
-          `Speak only to what you actually know. If this is outside your area, say so`,
-          `in one line and say who should call it instead — that is a useful answer.`,
+          `This is a conversation, not a report. Taglish, 1 to 3 sentences, about`,
+          `${REPLY_LIMITS.short} words, no preamble, no "great point", no restating the`,
+          `question. Speak only to what you actually know; outside your area, say so`,
+          `in one line and name who should call it. Start with \`kind:\`, end with \`@next:\`.`,
         ]
           .filter(Boolean)
           .join("\n"),
@@ -1100,14 +1219,24 @@ export class Orchestrator {
       state.lastTurnMs = result.durationMs;
 
       if (result.text.trim()) {
+        const guarded = await this.enforceLength({
+          agent: speaker,
+          roomName: room.name,
+          roster,
+          roomId,
+          signal,
+          text: result.text,
+        });
+        if (guarded.costUsd) state.costUsd += guarded.costUsd;
         this.post({
           roomId,
           authorId: speaker.id,
           kind: "agent",
-          text: result.text.trim(),
+          text: guarded.text,
           directedBy: before.length ? before[before.length - 1]!.id : orchestrator.id,
-          costUsd: result.costUsd,
+          costUsd: sumCost(result.costUsd, guarded.costUsd),
           durationMs: result.durationMs,
+          promptSha: result.promptSha,
         });
       }
     }
@@ -1190,14 +1319,25 @@ export class Orchestrator {
 
     if (signal.aborted) return "aborted";
 
+    const guarded = await this.enforceLength({
+      agent,
+      roomName: room.name,
+      roster,
+      roomId,
+      signal,
+      text: result.text,
+    });
+    if (guarded.costUsd) state.costUsd += guarded.costUsd;
+
     this.post({
       roomId,
       authorId: agent.id,
       kind: "agent",
-      text: result.text.trim() || "(no reply)",
+      text: guarded.text || "(no reply)",
       directedBy,
-      costUsd: result.costUsd,
+      costUsd: sumCost(result.costUsd, guarded.costUsd),
       durationMs: result.durationMs,
+      promptSha: result.promptSha,
     });
     return "ok";
   }
@@ -1926,6 +2066,7 @@ export class Orchestrator {
           const reply = await this.runTurn({
             agent: responder,
             chatTurn: !lookup,
+            ...(lookup ? {} : { effort: "low" }),
             roomName: room.name,
             roster,
             roomId,
@@ -1959,7 +2100,8 @@ export class Orchestrator {
                 ? `standing safety rules still hold — they are not suspended by a go-ahead.`
                 : `work he has not asked for, say what you can and name the work he`,
               lookup ? `` : `would have to ask for — in one line, not a proposal.`,
-              `Keep it short. He is often reading this on a phone.`,
+              `Answer in at most three sentences, Taglish. Ito ang pupunta sa phone niya`,
+              `as written, so plain words, no paths or tool names.`,
             ].join("\n"),
           });
 
@@ -1969,17 +2111,27 @@ export class Orchestrator {
           state.lastTurnMs = reply.durationMs;
 
           if (reply.text.trim()) {
+            const guarded = await this.enforceLength({
+              agent: responder,
+              roomName: room.name,
+              roster,
+              roomId,
+              signal: abort.signal,
+              text: reply.text,
+            });
+            if (guarded.costUsd) state.costUsd += guarded.costUsd;
             this.post({
               roomId,
               authorId: responder.id,
               kind: "agent",
-              text: reply.text.trim(),
-              costUsd: reply.costUsd,
+              text: guarded.text,
+              costUsd: sumCost(reply.costUsd, guarded.costUsd),
               durationMs: reply.durationMs,
+              promptSha: reply.promptSha,
             });
             const answer = withRoles(
               `💬 ${responder.name} (${responder.role}) answered:\n\n` +
-                reply.text.trim().slice(0, 1500),
+                guarded.text.slice(0, 1500),
               roster,
             );
             void notify(roomId, answer, { force: true, kind: "chatter" }).then((r) => {
@@ -2098,9 +2250,9 @@ export class Orchestrator {
             roster,
             agents,
             directedBy: prev,
-            instruction:
-              `You were handed this turn directly by the last speaker. Answer what is ` +
-              `in NEW, in your own voice.`,
+            instruction: turnInstruction(
+              `The last speaker handed you this directly. Answer what is in NEW.`,
+            ),
             state,
             signal: abort.signal,
           });
@@ -2195,6 +2347,7 @@ export class Orchestrator {
             text: said,
             costUsd: decisionResult.costUsd,
             durationMs: decisionResult.durationMs,
+            promptSha: decisionResult.promptSha,
           });
         }
 
@@ -2306,7 +2459,7 @@ export class Orchestrator {
           roster,
           agents,
           directedBy: orchestrator.id,
-          instruction: `${orchestrator.name} has asked you to act. Reply once, in your own voice.`,
+          instruction: turnInstruction(`${orchestrator.name} handed you this.`),
           state,
           signal: abort.signal,
         });

@@ -155,6 +155,9 @@ db.exec(`
   if (!has("act")) db.exec(`ALTER TABLE messages ADD COLUMN act TEXT`);
   if (!has("refs")) db.exec(`ALTER TABLE messages ADD COLUMN refs TEXT`);
   if (!has("next_id")) db.exec(`ALTER TABLE messages ADD COLUMN next_id TEXT`);
+
+  // Which exact system prompt produced this turn — see Message.promptSha.
+  if (!has("prompt_sha")) db.exec(`ALTER TABLE messages ADD COLUMN prompt_sha TEXT`);
 }
 
 /**
@@ -234,6 +237,7 @@ function rowToMessage(r: Record<string, unknown>): Message {
     act: r["act"] == null ? null : (String(r["act"]) as SpeechAct),
     refs: r["refs"] == null ? [] : (JSON.parse(String(r["refs"])) as number[]),
     nextId: r["next_id"] == null ? null : String(r["next_id"]),
+    promptSha: r["prompt_sha"] == null ? null : String(r["prompt_sha"]),
   };
 }
 
@@ -710,6 +714,7 @@ export function addMessage(input: {
   act?: SpeechAct | null;
   refs?: number[];
   nextId?: string | null;
+  promptSha?: string | null;
 }): Message {
   // The server is the only writer (every path that starts work goes through the
   // WebSocket), so reading the high-water mark and inserting after it cannot
@@ -737,11 +742,12 @@ export function addMessage(input: {
     act: input.act ?? null,
     refs: input.refs ?? [],
     nextId: input.nextId ?? null,
+    promptSha: input.promptSha ?? null,
   };
   db.prepare(
     `INSERT INTO messages
-       (id, room_id, seq, author_id, kind, text, directed_by, created_at, cost_usd, duration_ms, delivered, choices, protocol_version, act, refs, next_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, room_id, seq, author_id, kind, text, directed_by, created_at, cost_usd, duration_ms, delivered, choices, protocol_version, act, refs, next_id, prompt_sha)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     msg.id,
     msg.roomId,
@@ -759,6 +765,7 @@ export function addMessage(input: {
     msg.act,
     msg.refs.length ? JSON.stringify(msg.refs) : null,
     msg.nextId,
+    msg.promptSha,
   );
   return msg;
 }

@@ -136,6 +136,12 @@ export const config = {
    * `event: "markers"` lines until the miss rate is low, then turn this on.
    */
   fastDispatch: bool("AGORA_FAST_DISPATCH", false),
+  /**
+   * Rewrite a reply once, on the cheap model with tools off, when it runs past
+   * the budget in protocol.ts REPLY_LIMITS. Off means long replies post as they
+   * are. Never truncates — see Orchestrator.enforceLength.
+   */
+  lengthGuard: bool("AGORA_LENGTH_GUARD", true),
   notifyMinIntervalS: int("AGORA_NOTIFY_MIN_INTERVAL_S", 60),
 
   port: int("AGORA_PORT", 8787),
