@@ -92,6 +92,8 @@ export interface Step {
   status: StepStatus;
   note: string | null;
   updatedAt: number;
+  /** Steps this one waits for; empty = can start at once. */
+  dependsOn?: number[];
 }
 
 export interface Goal {

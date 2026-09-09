@@ -161,6 +161,12 @@ export const config = {
    * kind. 0 disables. Resume grants a fresh allowance.
    */
   goalCostCapUsd: num("AGORA_GOAL_COST_CAP_USD", 5),
+  /**
+   * Start every ready step at once, each with its own owner, instead of one
+   * agent per orchestrator turn. Bounded by maxConcurrency below: a wave of
+   * four with two slots runs two at a time.
+   */
+  parallelSteps: bool("AGORA_PARALLEL_STEPS", true),
   /** Forged agents per goal and per room, so a room cannot fill itself with helpers. */
   maxSpawnsPerGoal: int("AGORA_MAX_SPAWNS_PER_GOAL", 3),
   maxForgedPerRoom: int("AGORA_MAX_FORGED_PER_ROOM", 12),

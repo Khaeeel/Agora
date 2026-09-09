@@ -114,6 +114,7 @@ import type {
   RunPhase,
   RunState,
   ServerEvent,
+  Step,
   StepStatus,
   Tailor,
 } from "./types.ts";
@@ -244,8 +245,14 @@ const PLAN_SCHEMA = {
             type: ["string", "null"],
             description: "The id of the agent who should do it, or null if unassigned.",
           },
+          dependsOn: {
+            type: "array",
+            items: { type: "number" },
+            description:
+              "0-based indices of the steps that must be DONE before this one can start. Empty when it can start right away. Be honest here: every step whose dependencies are met starts at the same time as the others, each with its own owner, so two steps with different owners and no real dependency run in parallel — and a step marked as waiting on another sits idle until that one is done.",
+          },
         },
-        required: ["title", "owner"],
+        required: ["title", "owner", "dependsOn"],
         additionalProperties: false,
       },
     },
@@ -279,7 +286,7 @@ interface Plan {
   tailor: Array<{ agent: string } & Tailor> | null;
   createRoom: { name: string; topic: string; members: string[] } | null;
   goal: string;
-  steps: Array<{ title: string; owner: string | null }>;
+  steps: Array<{ title: string; owner: string | null; dependsOn?: number[] }>;
 }
 
 /** The orchestrator's one structured decision per turn. */
@@ -927,9 +934,15 @@ function planText(goalId: string | null): string {
             : "[ ]";
     const owner = s.ownerId ? ` (${s.ownerId})` : "";
     const note = s.note ? ` — ${s.note}` : "";
-    return `${mark} ${s.idx}. ${s.title}${owner}${note}`;
+    const after = s.dependsOn.length ? ` [after ${s.dependsOn.join(", ")}]` : "";
+    return `${mark} ${s.idx}. ${s.title}${owner}${after}${note}`;
   });
-  return [`Your plan for "${goal.title}":`, ...lines, ""].join("\n");
+  return [
+    `Your plan for "${goal.title}":`,
+    ...lines,
+    `Steps whose "after" list is all done start together, each with its own owner, before you decide.`,
+    "",
+  ].join("\n");
 }
 
 function resolveNext(raw: string | null, members: Agent[]): Agent | null {
@@ -1494,6 +1507,29 @@ export class Orchestrator {
       kind: "event",
       text: `created by ${orchestrator.name} · ${humanText.slice(0, 120)}`,
     });
+  }
+
+  /**
+   * The steps that can start right now: pending, every dependency done, an
+   * owner on the roster who is not the orchestrator — one step per owner, in
+   * plan order. This is what the room starts in parallel instead of asking the
+   * orchestrator to hand them out one turn at a time.
+   */
+  private readyWave(goalId: string, roster: Agent[], orchestrator: Agent): Array<{ step: Step; agent: Agent }> {
+    const goal = getGoal(goalId);
+    if (!goal) return [];
+    const done = new Set(goal.steps.filter((s) => s.status === "done").map((s) => s.idx));
+    const out: Array<{ step: Step; agent: Agent }> = [];
+    const used = new Set<string>();
+    for (const s of goal.steps) {
+      if (s.status !== "pending" || !s.ownerId || s.ownerId === orchestrator.id) continue;
+      if (!s.dependsOn.every((d) => done.has(d))) continue;
+      const agent = roster.find((a) => a.id === s.ownerId);
+      if (!agent || used.has(agent.id)) continue;
+      used.add(agent.id);
+      out.push({ step: s, agent });
+    }
+    return out;
   }
 
   /** Run one agent turn, streaming deltas out as they arrive. */
@@ -2940,6 +2976,7 @@ export class Orchestrator {
           const steps = (plan.steps ?? []).slice(0, 12).map((s) => ({
             title: s.title,
             ownerId: resolveNext(s.owner, roster)?.id ?? null,
+            dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn : [],
           }));
           if (steps.length > 0) {
             let goal = createGoal({ roomId, title: plan.goal, steps });
@@ -3048,6 +3085,55 @@ export class Orchestrator {
         }
         state.turn++;
 
+        // --- parallel wave: every ready step starts now, with its own owner ---
+        //
+        // The plan says which steps wait on which. Anything not waiting is
+        // started here, all at once, before the orchestrator spends a turn
+        // handing them out one by one. A wave of one is left to the normal
+        // path; two or more is the case this exists for. The concurrency gate
+        // still bounds how many actually run together.
+        if (config.parallelSteps && state.goalId) {
+          const wave = this.readyWave(state.goalId, roster, orchestrator);
+          if (wave.length >= 2) {
+            const goalId = state.goalId;
+            this.post({
+              roomId,
+              authorId: "system",
+              kind: "event",
+              text: `parallel · ${wave.map((w) => `${w.agent.name} (step ${w.step.idx + 1})`).join(", ")}`,
+            });
+            for (const w of wave) updateStep(goalId, w.step.idx, "active", null);
+            const started = getGoal(goalId);
+            if (started) this.emit({ type: "goal", goal: started });
+            this.setPhase(state, "generating", `parallel: ${wave.map((w) => w.agent.name).join(", ")}`);
+            const outcomes = await Promise.all(
+              wave.map((w) =>
+                this.dispatchTo({
+                  agent: w.agent,
+                  room,
+                  roomId,
+                  roster,
+                  agents,
+                  directedBy: orchestrator.id,
+                  instruction: turnInstruction(
+                    `${orchestrator.name} started you on step ${w.step.idx + 1}: "${w.step.title}". ` +
+                      `Others are working their own steps at the same time — do yours and report it as a \`result\`.`,
+                  ),
+                  state,
+                  signal: abort.signal,
+                }),
+              ),
+            );
+            state.turn += wave.length - 1;
+            for (const w of wave) {
+              recent.push(w.agent.id);
+              lastSpokeTurn.set(w.agent.id, state.turn);
+            }
+            if (outcomes.includes("aborted")) break;
+            // Fall through to the decision turn, which settles the board.
+          }
+        }
+
         // --- cheap dispatch: honour @next instead of paying for a decision ---
         //
         // The orchestrator turn below is a full model round trip, and most of
@@ -3139,6 +3225,10 @@ export class Orchestrator {
             `declare something finished because turns are running down.`,
             `Report EVERY plan step that changed this turn in "steps". A turn`,
             `that finishes three steps and reports one leaves the board lying.`,
+            `Steps whose dependencies were done have ALREADY been started in`,
+            `parallel, each by its owner — read what they reported above and mark`,
+            `each one done, blocked, or still active. Do not hand out a step that`,
+            `is already active.`,
             `Only mark a step done when it genuinely is. Blocked is an honest answer.`,
             `When the next move is a JUDGEMENT rather than legwork — which fix,`,
             `how bad is this really, is anyone seeing a risk — set "discuss" with`,

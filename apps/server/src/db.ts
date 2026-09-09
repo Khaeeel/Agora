@@ -166,6 +166,14 @@ db.exec(`
   if (!cols.some((c) => c.name === "tailor")) db.exec(`ALTER TABLE goals ADD COLUMN tailor TEXT`);
 }
 
+// Step dependencies — see Step.dependsOn. NULL on rows from before this column
+// existed, which rowToStep reads as "after the previous step": exactly the
+// one-at-a-time order those goals were planned under.
+{
+  const cols = db.prepare(`PRAGMA table_info(steps)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "depends_on")) db.exec(`ALTER TABLE steps ADD COLUMN depends_on TEXT`);
+}
+
 /**
  * Where each agent last spoke in each room.
  *
@@ -367,6 +375,12 @@ function rowToStep(r: Record<string, unknown>): Step {
     status: String(r["status"]) as StepStatus,
     note: r["note"] == null ? null : String(r["note"]),
     updatedAt: Number(r["updated_at"]),
+    dependsOn:
+      r["depends_on"] == null
+        ? Number(r["idx"]) > 0
+          ? [Number(r["idx"]) - 1]
+          : []
+        : (JSON.parse(String(r["depends_on"])) as number[]),
   };
 }
 
@@ -597,7 +611,7 @@ export function getGoal(id: string): Goal | null {
 export function createGoal(input: {
   roomId: string;
   title: string;
-  steps: Array<{ title: string; ownerId: string | null }>;
+  steps: Array<{ title: string; ownerId: string | null; dependsOn?: number[] }>;
 }): Goal {
   const id = randomUUID();
   const now = Date.now();
@@ -607,11 +621,14 @@ export function createGoal(input: {
   ).run(id, input.roomId, input.title, now);
 
   const insert = db.prepare(
-    `INSERT INTO steps (id, goal_id, idx, title, owner_id, status, note, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?)`,
+    `INSERT INTO steps (id, goal_id, idx, title, owner_id, status, note, updated_at, depends_on)
+     VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
   );
   input.steps.forEach((s, i) => {
-    insert.run(randomUUID(), id, i, s.title, s.ownerId, now);
+    // Only earlier, distinct indices count; a step cannot wait on itself or
+    // on something planned after it.
+    const deps = [...new Set((s.dependsOn ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d < i))];
+    insert.run(randomUUID(), id, i, s.title, s.ownerId, now, JSON.stringify(deps));
   });
 
   return getGoal(id)!;

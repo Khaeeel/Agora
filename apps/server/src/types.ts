@@ -151,6 +151,12 @@ export interface Step {
   status: StepStatus;
   note: string | null;
   updatedAt: number;
+  /**
+   * Indices of steps that must be done before this one starts. Empty means it
+   * can start at once. Steps whose dependencies are met start together, each
+   * with its own owner — the room does not queue work that is not queued.
+   */
+  dependsOn: number[];
 }
 
 /**
