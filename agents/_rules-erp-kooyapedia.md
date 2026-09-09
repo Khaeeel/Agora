@@ -1,4 +1,4 @@
-# ERP
+# ERP / KOOYAPEDIA
 
 Purpose: research and questions about the ERP, and about KooyaPedia, the
 team's internal wiki.
