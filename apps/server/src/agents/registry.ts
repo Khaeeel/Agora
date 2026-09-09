@@ -167,6 +167,63 @@ export function forgeAgent(input: {
 }
 
 /**
+ * Apply a capability grant Dominic gave IN THE ROOM to one agent's file.
+ *
+ * This is the only code path anywhere that changes `tools`, `add_dirs` or
+ * `allow`, and it runs only from `Orchestrator.applyAccess`, which requires the
+ * grant to come from Dominic's own typed message ("i-access mo ang X",
+ * "tignan mo ang KooyaPedia"). The safety line — agents never grant capability
+ * — holds: the orchestrator names who, Dominic said what.
+ *
+ * The frontmatter is edited in place: the three keys are removed in whichever
+ * form they were written (flow or block) and re-emitted as flow lists at the
+ * end; every other line, including the comments explaining earlier grants,
+ * survives. Values are merged, never replaced, so a grant only ever adds.
+ */
+export function grantAccess(
+  agentId: string,
+  grant: { dirs?: string[]; allow?: string[]; tools?: string[] },
+): Agent {
+  const path = join(config.agentsDir, `${agentId}.md`);
+  if (!existsSync(path)) throw new Error(`No agent called "${agentId}"`);
+  const raw = readFileSync(path, "utf8");
+  const fm = raw.match(FRONTMATTER);
+  if (!fm) throw new Error(`${agentId} has no frontmatter`);
+  const current = parseAgentFile(path);
+  const tools = [...new Set([...current.tools, ...(grant.tools ?? [])])];
+  const dirs = [...new Set([...current.addDirs, ...(grant.dirs ?? [])])];
+  const allow = [...new Set([...current.allow, ...(grant.allow ?? [])])];
+
+  const lines = fm[1]!.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i]!;
+    const key = ln.match(/^(tools|add_dirs|allow):\s*(.*)$/);
+    if (!key) {
+      kept.push(ln);
+      continue;
+    }
+    if ((key[2] ?? "").startsWith("[")) {
+      // Flow form, possibly spanning lines until the closing bracket.
+      let acc = key[2] ?? "";
+      while (!acc.includes("]") && i + 1 < lines.length) acc += lines[++i]!;
+    } else {
+      // Block form: swallow the "  - item" lines that follow.
+      while (i + 1 < lines.length && /^\s+-\s/.test(lines[i + 1]!)) i++;
+    }
+  }
+  const flow = (xs: string[]): string => `[${xs.map((x) => JSON.stringify(x)).join(", ")}]`;
+  while (kept.length && kept[kept.length - 1]!.trim() === "") kept.pop();
+  kept.push(`tools: ${flow(tools)}`);
+  if (dirs.length) kept.push(`add_dirs: ${flow(dirs)}`);
+  if (allow.length) kept.push(`allow: ${flow(allow)}`);
+
+  const body = raw.slice(fm[0].length);
+  writeFileSync(path, `---\n${kept.join("\n")}\n---\n${body.startsWith("\n") ? body : "\n" + body}`, "utf8");
+  return parseAgentFile(path);
+}
+
+/**
  * The rules file a new room reads. Written once at creation so the room has a
  * place for project facts from the first turn; Dominic or the mechanic fills it.
  */
@@ -421,11 +478,13 @@ export function buildSystemPrompt(
     opts.chatTurn
       ? [
           "## This turn is a conversation, not a task",
-          "Dominic asked you directly, so your tools are switched OFF for this one",
-          "reply. Answer from what you already know. Off for this reply is not the",
-          "same as absent: the room's capabilities are exactly as described above.",
-          "Never tell Dominic the room cannot do something it can, and never claim",
-          "you looked anything up this turn, because you did not.",
+          "Dominic asked you directly, so answer from what you already know, in your",
+          "own words. Do not mention tools and do not announce that you could not",
+          "look anything up. If a proper answer needs a file, a page or the wiki,",
+          "say in one line what you would check and that he only has to say",
+          "'check it'. The room's capabilities are exactly as described above; never",
+          "tell him the room cannot do something it can, and never claim you looked",
+          "something up this turn, because you did not.",
         ].join("\n")
       : "## What you can actually do right now",
     !opts.chatTurn && agent.tools.length === 0 && agent.mcp.length === 0

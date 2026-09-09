@@ -22,14 +22,39 @@ import {
   setRoomMembers,
   updateStep,
 } from "./db.ts";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import {
   SLUG,
   buildSystemPrompt,
   forgeAgent,
+  grantAccess,
   listTemplates,
   slugify,
   writeRoomRules,
 } from "./agents/registry.ts";
+
+/**
+ * Words that mean "go and look". A backstop for the planner's needsLookup and
+ * the gate for access grants: "pwede mo ba tignan" answered with tools off is
+ * how Fury told Dominic it had not seen KooyaPedia.
+ */
+const LOOK_WORDS =
+  /\b(tingnan|tignan|tingin|silipin|check|scan|i-?scan|look|basahin|read|buksan|open|hanapin|search|verify|i-?access|access)\b/i;
+
+/** Folders Dominic may open to a room by saying so. Never the agora repo itself (it holds .env). */
+const ACCESS_ROOTS = ["/mnt/c/Projects", "/mnt/c/Users/domin", "/home/dominickooya"];
+
+const KOOYAPEDIA_GRANT = {
+  tools: ["Bash"],
+  allow: ["Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"],
+};
+
+/** `C:\\Projects\\X` or `C:/Projects/X` as WSL sees it. */
+function toWslPath(p: string): string {
+  const m = p.trim().replace(/^["'`]|["'`]$/g, "").match(/^([A-Za-z]):[\\/](.*)$/);
+  if (m) return `/mnt/${m[1]!.toLowerCase()}/${m[2]!.replace(/\\/g, "/")}`;
+  return p.trim();
+}
 import {
   PROTOCOL_VERSION,
   REPLY_LIMITS,
@@ -110,6 +135,30 @@ const PLAN_SCHEMA = {
       required: ["template", "id", "name", "role", "brief"],
       additionalProperties: false,
     },
+    access: {
+      type: ["object", "null"],
+      description:
+        "ONLY when Dominic's own message tells the room to access, open, look at or read a specific project folder or KooyaPedia (the internal wiki). Null otherwise. He grants read access by saying so; you only name what and to whom.",
+      properties: {
+        kind: {
+          type: "string",
+          enum: ["dir", "kooyapedia"],
+          description: "dir = a folder he named, Windows or WSL form. kooyapedia = the internal wiki.",
+        },
+        path: {
+          type: ["string", "null"],
+          description: "For dir: the folder exactly as he wrote it. Null for kooyapedia.",
+        },
+        agents: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Agent ids that get it. The one who will answer, or everyone on the roster if he said 'kayong lahat' or named nobody.",
+        },
+      },
+      required: ["kind", "path", "agents"],
+      additionalProperties: false,
+    },
     createRoom: {
       type: ["object", "null"],
       description:
@@ -144,7 +193,7 @@ const PLAN_SCHEMA = {
       },
     },
   },
-  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "createRoom", "goal", "steps"],
+  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "access", "createRoom", "goal", "steps"],
   additionalProperties: false,
 } as const;
 
@@ -162,6 +211,7 @@ interface Plan {
   discuss: string[] | null;
   needsLookup: boolean | null;
   spawn: SpawnRequest | null;
+  access: { kind: "dir" | "kooyapedia"; path: string | null; agents: string[] } | null;
   createRoom: { name: string; topic: string; members: string[] } | null;
   goal: string;
   steps: Array<{ title: string; owner: string | null }>;
@@ -1103,6 +1153,99 @@ export class Orchestrator {
     });
     gitCommitFile(agent.file, `forge(${agent.id}): ${template} by ${orchestrator.id}`, orchestrator.id);
     return agent;
+  }
+
+  /**
+   * Honour a planner's `access`: Dominic said "i-access mo ang X" or "tignan mo
+   * ang KooyaPedia" in the room, so the named agents get read access to X, or
+   * the KooyaPedia lookup wrapper, before anyone answers. This is what makes
+   * the room behave like Claude Code in auto mode: he names a project, the
+   * room can look at it.
+   *
+   * Guards, in order: the message is Dominic's own (not relayed from WhatsApp),
+   * it actually asks to look, the folder exists and sits under ACCESS_ROOTS,
+   * and it is not the agora repo itself. Everything else is a notice, not an
+   * exception, so the run carries on with what the room already had.
+   */
+  private applyAccess(opts: {
+    roomId: string;
+    orchestrator: Agent;
+    roster: Agent[];
+    agents: Map<string, Agent>;
+    humanText: string;
+    request: { kind: "dir" | "kooyapedia"; path: string | null; agents: string[] };
+  }): void {
+    const { roomId, orchestrator, roster, agents, humanText, request } = opts;
+    const refuse = (why: string): void => {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `Access not granted: ${why}` });
+    };
+    if (/^\s*\[relayed via/i.test(humanText)) return refuse("only a message Dominic types into the room can grant access.");
+    if (!LOOK_WORDS.test(humanText)) return refuse("Dominic's message did not ask the room to look at anything.");
+
+    let grant: { tools?: string[]; dirs?: string[]; allow?: string[] };
+    let label: string;
+    if (request.kind === "kooyapedia") {
+      grant = KOOYAPEDIA_GRANT;
+      label = "KooyaPedia";
+    } else {
+      const wanted = toWslPath(request.path ?? "");
+      if (!wanted.startsWith("/")) return refuse(`"${request.path}" is not an absolute folder path.`);
+      if (!existsSync(wanted)) return refuse(`"${wanted}" does not exist as seen from WSL.`);
+      let real: string;
+      try {
+        real = realpathSync(wanted);
+      } catch {
+        return refuse(`"${wanted}" cannot be resolved.`);
+      }
+      if (!statSync(real).isDirectory()) return refuse(`"${real}" is a file, not a folder.`);
+      if (real === config.root || real.startsWith(config.root + "/")) {
+        return refuse("the agora repo itself is never opened to a room — it holds the .env.");
+      }
+      if (!ACCESS_ROOTS.some((r) => real === r || real.startsWith(r + "/"))) {
+        return refuse(`"${real}" is outside the folders a room may be given (${ACCESS_ROOTS.join(", ")}).`);
+      }
+      grant = { tools: ["Read", "Glob", "Grep"], dirs: [real] };
+      label = real;
+    }
+
+    const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
+    const targets = (named.length ? named : roster.map((a) => a.id)).filter((id) => id !== orchestrator.id || named.includes(id));
+    if (!targets.length) return refuse("no agent on the roster to grant it to.");
+
+    const done: string[] = [];
+    for (const id of targets) {
+      try {
+        const updated = grantAccess(id, grant);
+        agents.set(id, updated);
+        const at = roster.findIndex((a) => a.id === id);
+        if (at !== -1) roster[at] = updated;
+        gitCommitFile(updated.file, `access(${id}): ${label} — granted by Dominic in the room`, "dominic");
+        done.push(updated.name);
+      } catch (err) {
+        this.post({
+          roomId,
+          authorId: "system",
+          kind: "notice",
+          text: `Access to ${label} for ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+    }
+    if (!done.length) return;
+    this.emit({ type: "agents", agents: [...agents.values()] });
+    this.post({
+      roomId,
+      authorId: "system",
+      kind: "event",
+      text: `access · ${done.join(", ")} may now read ${label} · granted by Dominic`,
+    });
+    if (request.kind === "dir") {
+      this.post({
+        roomId,
+        authorId: "system",
+        kind: "notice",
+        text: `Read-only. Never open or quote a .env* file under ${label}; anything said here can reach WhatsApp.`,
+      });
+    }
   }
 
   /**
@@ -2234,6 +2377,9 @@ export class Orchestrator {
 
         const plan = (planResult.structured ?? null) as Plan | null;
 
+        if (plan?.access && !abort.signal.aborted) {
+          this.applyAccess({ roomId, orchestrator, roster, agents, humanText, request: plan.access });
+        }
         if (plan?.createRoom && !abort.signal.aborted) {
           this.createRoomFor({ roomId, orchestrator, agents, humanText, request: plan.createRoom });
         }
@@ -2321,7 +2467,11 @@ export class Orchestrator {
           // repo cannot be answered from memory and should not be. Alex asked
           // to confirm a line in a workflow file, with no way to open it, can
           // only refuse — which is honest and useless.
-          const lookup = plan.needsLookup === true && responder.tools.length > 0;
+          // The planner's call, with a deterministic backstop: when Dominic
+          // literally asks someone to look at something and the responder can,
+          // tools stay on for this reply.
+          const asksToLook = LOOK_WORDS.test(humanText);
+          const lookup = (plan.needsLookup === true || asksToLook) && responder.tools.length > 0;
           const reply = await this.runTurn({
             agent: responder,
             chatTurn: !lookup,
@@ -2359,6 +2509,11 @@ export class Orchestrator {
                 ? `standing safety rules still hold — they are not suspended by a go-ahead.`
                 : `work he has not asked for, say what you can and name the work he`,
               lookup ? `` : `would have to ask for — in one line, not a proposal.`,
+              asksToLook && !lookup
+                ? `He asked you to look at something and nothing you hold in this room can open it. ` +
+                  `Say so in one plain sentence and name what would let you — a folder he can open ` +
+                  `by saying "i-access mo ang <path>", or "tignan mo ang KooyaPedia" — then stop.`
+                : ``,
               `Answer in at most three sentences, Taglish. Ito ang pupunta sa phone niya`,
               `as written, so plain words, no paths or tool names.`,
             ].join("\n"),
