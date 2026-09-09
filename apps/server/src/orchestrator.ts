@@ -70,6 +70,33 @@ function inferAccess(text: string): { kind: AccessKind; path: string | null } | 
   return null;
 }
 
+/**
+ * One line of what an agent can actually reach, for the orchestrator's roster.
+ * A room that cannot see its own grants invents blockers: Fury kept marking
+ * Writer "waiting on Dominic's Allow" three resumes after Dominic had tapped
+ * it, because nothing in the decision prompt said Writer already held it.
+ */
+function grantsLine(a: Agent): string {
+  const wrappers = a.allow
+    .map((p) => p.match(/scripts\/([a-z0-9-]+)\.sh/)?.[1] ?? null)
+    .filter((x): x is string => x !== null);
+  const parts: string[] = [];
+  if (a.tools.length) parts.push(`tools ${a.tools.join(",")}`);
+  if (a.addDirs.length) parts.push(`dirs ${a.addDirs.join(", ")}`);
+  if (wrappers.length) parts.push(`wrappers ${wrappers.join(", ")}`);
+  if (a.allow.some((p) => /^WebSearch|^WebFetch/.test(p))) parts.push("web");
+  return parts.length ? ` — holds: ${parts.join("; ")}` : " — chat only, no tools";
+}
+
+/** Does this agent already hold what an access ask would grant? */
+function accessHeld(a: Agent, kind: AccessKind, label: string): boolean {
+  if (kind === "kooyapedia") return a.allow.some((x) => x.includes("kooyapedia-lookup.sh"));
+  if (kind === "kooyapedia-write") return a.allow.some((x) => x.includes("kooyapedia-edit.sh"));
+  const dir = label.replace(/ \(write\)$/, "");
+  if (kind === "dir-write") return a.addDirs.includes(dir) && a.tools.includes("Write");
+  return a.addDirs.includes(dir);
+}
+
 /** A room's prose blocker that is really an access problem, read as a request. */
 function inferAsk(text: string): { kind: AccessKind; path: string | null } | null {
   if (!/\b(access|permission|grant|frontmatter|add_dirs|tools?|write|edit|read)\b/i.test(text)) return null;
@@ -1388,12 +1415,12 @@ export class Orchestrator {
     roster: Agent[];
     agents: Map<string, Agent>;
     request: AccessAsk;
-  }): boolean {
+  }): "asked" | "held" | "dropped" {
     const { roomId, room, state, roster, agents, request } = opts;
     const resolved = resolveGrant(request.kind, request.path);
     if ("error" in resolved) {
       this.post({ roomId, authorId: "system", kind: "notice", text: `Access request dropped: ${resolved.error}` });
-      return false;
+      return "dropped";
     }
     const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
     const goalNow = state.goalId ? getGoal(state.goalId) : null;
@@ -1405,19 +1432,14 @@ export class Orchestrator {
       : blockedOwners.length
         ? blockedOwners
         : roster.filter((a) => a.id !== room.orchestratorId).map((a) => a.id);
-    if (!targets.length) return false;
+    if (!targets.length) return "dropped";
     const already = targets.every((id) => {
       const a = agents.get(id);
-      if (!a) return false;
-      if (request.kind === "kooyapedia") return a.allow.some((x) => x.includes("kooyapedia-lookup.sh"));
-      if (request.kind === "kooyapedia-write") return a.allow.some((x) => x.includes("kooyapedia-edit.sh"));
-      const dir = resolved.label.replace(/ \(write\)$/, "");
-      if (request.kind === "dir-write") return a.addDirs.includes(dir) && a.tools.includes("Write");
-      return a.addDirs.includes(dir);
+      return a ? accessHeld(a, request.kind, resolved.label) : false;
     });
     if (already) {
       this.post({ roomId, authorId: "system", kind: "notice", text: `${targets.join(", ")} already ${targets.length === 1 ? "has" : "have"} access to ${resolved.label} — carry on.` });
-      return false;
+      return "held";
     }
     const who = targets.map((id) => agents.get(id)?.name ?? id).join(", ");
     const base = { kind: request.kind, path: request.path, agents: targets, goalId: state.goalId };
@@ -1443,7 +1465,41 @@ export class Orchestrator {
     // Waiting on a button is not "blocked": nothing auto-resumes it, and the
     // per-goal grants it may already hold are kept until the goal is over.
     state.stopReason = "awaiting_access";
-    return true;
+    return "asked";
+  }
+
+  /**
+   * A step marked blocked "waiting on access" that its owner already holds is
+   * a stale belief, not a blocker. Flip it back to active, say so in the room,
+   * and hand the owner the step with the grant spelled out. Returns the owners
+   * to dispatch, in plan order.
+   */
+  private unblockHeld(roomId: string, goalId: string, roster: Agent[], agents: Map<string, Agent>): Agent[] {
+    const goal = getGoal(goalId);
+    if (!goal) return [];
+    const out: Agent[] = [];
+    for (const s of goal.steps) {
+      if (s.status !== "blocked" || !s.ownerId) continue;
+      const owner = agents.get(s.ownerId);
+      if (!owner) continue;
+      const ask = inferAsk(`${s.title} ${s.note ?? ""}`);
+      if (!ask) continue;
+      const resolved = resolveGrant(ask.kind, ask.path);
+      if ("error" in resolved || !accessHeld(owner, ask.kind, resolved.label)) continue;
+      updateStep(goalId, s.idx, "active", `Access to ${resolved.label} is already granted — proceeding.`);
+      this.post({
+        roomId,
+        authorId: "system",
+        kind: "event",
+        text: `step active · ${s.idx + 1}. ${s.title} · ${owner.name} — already holds ${resolved.label}; not blocked`,
+      });
+      if (!out.some((a) => a.id === owner.id) && roster.some((a) => a.id === owner.id)) out.push(owner);
+    }
+    if (out.length) {
+      const updated = getGoal(goalId);
+      if (updated) this.emit({ type: "goal", goal: updated });
+    }
+    return out;
   }
 
   /**
@@ -2254,6 +2310,10 @@ export class Orchestrator {
         "",
         planText(state.goalId),
         "",
+        `What each agent holds right now (this is the truth, whatever the transcript says):`,
+        roster.filter((a) => a.id !== orchestrator.id).map((a) => `- ${a.id}${grantsLine(a)}`).join("\n") || "(none)",
+        `A step whose note says it waits on access its owner already holds is NOT blocked — mark it active and assign it.`,
+        "",
         // Without this the review judged the deliverable purely from step
         // statuses and escalated "the prompt was never written" while a
         // complete 1,977-character prompt sat in the goal's handoff field.
@@ -2357,8 +2417,12 @@ export class Orchestrator {
         return found ? { ...found, agents: [], reason: "Ito ang kulang ng room para ituloy." } : null;
       })();
     if (inferredAsk) {
-      const wait = this.askAccess({ roomId, room, state, roster, agents, request: inferredAsk });
-      if (wait) return false;
+      const outcome = this.askAccess({ roomId, room, state, roster, agents, request: inferredAsk });
+      if (outcome === "asked") return false;
+      if (outcome === "held" && state.goalId) {
+        this.unblockHeld(roomId, state.goalId, roster, agents);
+        return true;
+      }
     }
 
     // blocked — but first, is it true? A claim that the room lacks a capability
@@ -2852,7 +2916,7 @@ export class Orchestrator {
             `Agents you can assign:`,
             roster
               .filter((a) => a.id !== orchestrator.id)
-              .map((a) => `- ${a.id}: ${a.name}, ${a.role}`)
+              .map((a) => `- ${a.id}: ${a.name}, ${a.role}${grantsLine(a)}`)
               .join("\n") || "(none)",
             "",
             lastGoalContext(roomId),
@@ -3318,7 +3382,7 @@ export class Orchestrator {
         );
         const rosterText = roster
           .filter((a) => a.id !== orchestrator.id)
-          .map((a) => `- ${a.id}: ${a.name}, ${a.role}`)
+          .map((a) => `- ${a.id}: ${a.name}, ${a.role}${grantsLine(a)}`)
           .join("\n");
 
         const decisionResult = await this.runTurn({
@@ -3395,7 +3459,7 @@ export class Orchestrator {
         }
 
         if (decision.accessRequest) {
-          const wait = this.askAccess({
+          const outcome = this.askAccess({
             roomId,
             room,
             state,
@@ -3403,7 +3467,36 @@ export class Orchestrator {
             agents,
             request: decision.accessRequest,
           });
-          if (wait) break;
+          if (outcome === "asked") break;
+        }
+
+        // Steps the orchestrator just marked blocked on access the owner
+        // already holds: unblock them and put the owner to work right now,
+        // with the grant spelled out, instead of letting the belief harden.
+        if (state.goalId) {
+          const held = this.unblockHeld(roomId, state.goalId, roster, agents);
+          if (held.length) {
+            for (const owner of held) {
+              const outcome = await this.dispatchTo({
+                agent: owner,
+                room,
+                roomId,
+                roster,
+                agents,
+                directedBy: orchestrator.id,
+                instruction: turnInstruction(
+                  `You already hold what your step needs${grantsLine(owner)}. The "waiting on Dominic" note was stale. ` +
+                    `Do the step now with those tools and report a \`result\`; if something else stops you, say exactly what.`,
+                ),
+                state,
+                signal: abort.signal,
+              });
+              recent.push(owner.id);
+              lastSpokeTurn.set(owner.id, state.turn);
+              if (outcome === "aborted") break;
+            }
+            continue;
+          }
         }
 
         if (decision.spawn) {
