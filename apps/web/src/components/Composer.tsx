@@ -14,16 +14,30 @@ export function Composer({
   connected,
   busy,
   onSend,
+  prefill,
 }: {
   roomName: string;
   hasRoom: boolean;
   connected: boolean;
   busy: boolean;
   onSend: (text: string) => void;
+  /** Text to drop into the box from elsewhere — a "Message" button on an agent. */
+  prefill?: { text: string; nonce: number } | null;
 }) {
   const [text, setText] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // A "Message Fury" tap puts "@fury " in the box and hands you the cursor.
+  useEffect(() => {
+    if (!prefill) return;
+    setText(prefill.text);
+    const el = areaRef.current;
+    if (el) {
+      el.focus();
+      requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+    }
+  }, [prefill?.nonce]);
 
   const blocked = !hasRoom
     ? "No room selected."

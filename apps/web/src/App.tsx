@@ -20,6 +20,8 @@ export function App() {
   const [view, setView] = useState<View>("chatroom");
   const [agentModal, setAgentModal] = useState<AgentModal>(null);
   const [showRoom, setShowRoom] = useState(false);
+  /** What a "Message" button dropped into the composer, with a nonce so the same agent twice still fires. */
+  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
 
   const {
     state,
@@ -183,6 +185,7 @@ export function App() {
               connected={state.connected}
               busy={busy}
               onSend={broadcast}
+              prefill={prefill}
             />
           </>
         )}
@@ -195,6 +198,7 @@ export function App() {
         memory={state.memory}
         onNewRoom={() => setShowRoom(true)}
         onEditAgent={(a) => setAgentModal(a)}
+        onMessage={(a) => setPrefill({ text: `@${a.id} `, nonce: Date.now() })}
         mindStone={state.mindStone}
         compacting={state.run?.phase === "compacting"}
       />
