@@ -22,3 +22,11 @@ data/
 !.env.example
 *.pem
 *.key
+
+# Hand-made safety copies and archived rosters. Version control is the backup now.
+*.bak-*
+*.bak
+.backup-*/
+.archived-*/
+__pycache__/
+*.tsbuildinfo
