@@ -8,7 +8,7 @@ async function get(path) {
   try {
     res = await fetch(BASE + path, { signal: AbortSignal.timeout(20_000) });
   } catch (err) {
-    console.error(`kooyapedia-lookup: cannot reach ${BASE} (${err.message}). Is KooyaPedia running on the Windows side (npm start in C:/Projects/Alexandria)?`);
+    console.error(`kooyapedia-lookup: cannot reach ${BASE} (${err.message}). Is KooyaPedia running on the Windows side (npm start in C:/Projects/KooyaPedia)?`);
     process.exit(70);
   }
   if (!res.ok) {

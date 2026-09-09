@@ -51,24 +51,50 @@ const KOOYAPEDIA_GRANT = {
   allow: ["Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"],
 };
 
+type AccessKind = "dir" | "dir-write" | "kooyapedia" | "kooyapedia-write";
+
+const WRITE_WORDS =
+  /\b(write|edit|isulat|i-?edit|baguhin|i-?update|update|create|gumawa|i-?save|publish|i-?apply|magsulat|sulat|rewrite|i-?rewrite)\b/i;
+
 /**
  * What Dominic pointed at, when there is no planner to say so: a direct
- * message or a plan that left `access` null. KooyaPedia by name, or the first
- * folder-shaped token. Null when he named nothing.
+ * message, a plan that left `access` null, or a room's own blocker text.
+ * KooyaPedia by name, or the first folder-shaped token; a write word on the
+ * same message asks for the write flavour. Null when nothing was named.
  */
-function inferAccess(text: string): { kind: "dir" | "kooyapedia"; path: string | null } | null {
-  if (/kooyapedia/i.test(text)) return { kind: "kooyapedia", path: null };
+function inferAccess(text: string): { kind: AccessKind; path: string | null } | null {
+  const write = WRITE_WORDS.test(text);
+  if (/kooyapedia/i.test(text)) return { kind: write ? "kooyapedia-write" : "kooyapedia", path: null };
   const m = text.match(/(?:[A-Za-z]:[\\/]|\/mnt\/[a-z]\/|\/home\/)[^\s"'`,;]+/);
-  if (m) return { kind: "dir", path: m[0].replace(/[.)\]]+$/, "") };
+  if (m) return { kind: write ? "dir-write" : "dir", path: m[0].replace(/[.)\]]+$/, "") };
   return null;
 }
 
+/** A room's prose blocker that is really an access problem, read as a request. */
+function inferAsk(text: string): { kind: AccessKind; path: string | null } | null {
+  if (!/\b(access|permission|grant|frontmatter|add_dirs|tools?|write|edit|read)\b/i.test(text)) return null;
+  return inferAccess(text);
+}
+
+/** Dominic waving the whole thing through: "hinahayaan kita sa lahat", "go ahead". */
+const BLANKET =
+  /\b(hinahayaan kita|hayaan mo|go ahead|payag ako|allow(ed)? (all|everything)|lahat (ng )?(access|pwede)|gawin mo lang|bahala ka|sige lang|ituloy mo lang|full access)\b/i;
+
+const KOOYAPEDIA_WRITE_GRANT = {
+  tools: ["Bash"],
+  allow: [
+    "Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)",
+    "Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-edit.sh:*)",
+  ],
+};
+
 /** Turn a kind + path into the concrete grant, or say why not. Shared by every access path. */
 function resolveGrant(
-  kind: "dir" | "kooyapedia",
+  kind: AccessKind,
   path: string | null,
 ): { grant: { tools?: string[]; dirs?: string[]; allow?: string[] }; label: string } | { error: string } {
   if (kind === "kooyapedia") return { grant: KOOYAPEDIA_GRANT, label: "KooyaPedia" };
+  if (kind === "kooyapedia-write") return { grant: KOOYAPEDIA_WRITE_GRANT, label: "KooyaPedia (write)" };
   const wanted = toWslPath(path ?? "");
   if (!wanted.startsWith("/")) return { error: `"${path}" is not an absolute folder path.` };
   if (!existsSync(wanted)) return { error: `"${wanted}" does not exist as seen from WSL.` };
@@ -84,6 +110,9 @@ function resolveGrant(
   }
   if (!ACCESS_ROOTS.some((r) => real === r || real.startsWith(r + "/"))) {
     return { error: `"${real}" is outside the folders a room may be given (${ACCESS_ROOTS.join(", ")}).` };
+  }
+  if (kind === "dir-write") {
+    return { grant: { tools: ["Read", "Glob", "Grep", "Write", "Edit"], dirs: [real] }, label: `${real} (write)` };
   }
   return { grant: { tools: ["Read", "Glob", "Grep"], dirs: [real] }, label: real };
 }
@@ -184,8 +213,9 @@ const PLAN_SCHEMA = {
       properties: {
         kind: {
           type: "string",
-          enum: ["dir", "kooyapedia"],
-          description: "dir = a folder he named, Windows or WSL form. kooyapedia = the internal wiki.",
+          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write"],
+          description:
+            "dir = read a folder he named (Windows or WSL form). dir-write = read AND edit files in it. kooyapedia = read the internal wiki. kooyapedia-write = read and edit wiki articles. Pick the write flavour only when he asked for changes to be made.",
         },
         path: {
           type: ["string", "null"],
@@ -262,7 +292,7 @@ const PLAN_SCHEMA = {
 } as const;
 
 interface AccessAsk {
-  kind: "dir" | "kooyapedia";
+  kind: AccessKind;
   path: string | null;
   agents: string[];
   reason: string;
@@ -282,7 +312,7 @@ interface Plan {
   discuss: string[] | null;
   needsLookup: boolean | null;
   spawn: SpawnRequest | null;
-  access: { kind: "dir" | "kooyapedia"; path: string | null; agents: string[] } | null;
+  access: { kind: AccessKind; path: string | null; agents: string[] } | null;
   tailor: Array<{ agent: string } & Tailor> | null;
   createRoom: { name: string; topic: string; members: string[] } | null;
   goal: string;
@@ -388,7 +418,11 @@ const DECISION_SCHEMA = {
       description:
         "When the room cannot proceed ONLY because it lacks read access to a folder or to KooyaPedia, ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Null otherwise.",
       properties: {
-        kind: { type: "string", enum: ["dir", "kooyapedia"] },
+        kind: {
+          type: "string",
+          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write"],
+          description: "dir = read a folder. dir-write = read and edit it. kooyapedia = read the wiki. kooyapedia-write = edit wiki articles.",
+        },
         path: { type: ["string", "null"], description: "The folder, Windows or WSL form. Null for kooyapedia." },
         agents: { type: "array", items: { type: "string" }, description: "Agent ids that need it." },
         reason: { type: "string", description: "One plain sentence, Taglish: what it is for." },
@@ -777,7 +811,11 @@ const PROGRESS_SCHEMA = {
       description:
         "When the room cannot proceed ONLY because it lacks read access to a folder or to KooyaPedia, ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Null otherwise.",
       properties: {
-        kind: { type: "string", enum: ["dir", "kooyapedia"] },
+        kind: {
+          type: "string",
+          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write"],
+          description: "dir = read a folder. dir-write = read and edit it. kooyapedia = read the wiki. kooyapedia-write = edit wiki articles.",
+        },
         path: { type: ["string", "null"], description: "The folder, Windows or WSL form. Null for kooyapedia." },
         agents: { type: "array", items: { type: "string" }, description: "Agent ids that need it." },
         reason: { type: "string", description: "One plain sentence, Taglish: what it is for." },
@@ -1065,6 +1103,9 @@ export class Orchestrator {
   /** Agents forged per goal (keyed by goal id, or the room id before a goal exists). */
   private readonly spawned = new Map<string, number>();
 
+  /** The last blocker each goal escalated, so a resumed goal does not re-send the same one. */
+  private readonly lastBlocker = new Map<string, string>();
+
   /** Per-goal grants Dominic allowed with "Allow for this goal", taken back when it closes. */
   private readonly tempGrants = new Map<string, Array<{ agentId: string; dirs: string[]; allow: string[] }>>();
 
@@ -1281,7 +1322,7 @@ export class Orchestrator {
     roster: Agent[];
     agents: Map<string, Agent>;
     humanText: string;
-    request: { kind: "dir" | "kooyapedia"; path: string | null; agents: string[] };
+    request: { kind: AccessKind; path: string | null; agents: string[] };
   }): void {
     const { roomId, orchestrator, roster, agents, humanText, request } = opts;
     const refuse = (why: string): void => {
@@ -1355,13 +1396,24 @@ export class Orchestrator {
       return false;
     }
     const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
-    const targets = named.length ? named : roster.filter((a) => a.id !== room.orchestratorId).map((a) => a.id);
+    const goalNow = state.goalId ? getGoal(state.goalId) : null;
+    const blockedOwners = [
+      ...new Set((goalNow?.steps ?? []).filter((s) => s.status === "blocked" && s.ownerId).map((s) => s.ownerId as string)),
+    ];
+    const targets = named.length
+      ? named
+      : blockedOwners.length
+        ? blockedOwners
+        : roster.filter((a) => a.id !== room.orchestratorId).map((a) => a.id);
     if (!targets.length) return false;
     const already = targets.every((id) => {
       const a = agents.get(id);
       if (!a) return false;
       if (request.kind === "kooyapedia") return a.allow.some((x) => x.includes("kooyapedia-lookup.sh"));
-      return a.addDirs.includes(resolved.label);
+      if (request.kind === "kooyapedia-write") return a.allow.some((x) => x.includes("kooyapedia-edit.sh"));
+      const dir = resolved.label.replace(/ \(write\)$/, "");
+      if (request.kind === "dir-write") return a.addDirs.includes(dir) && a.tools.includes("Write");
+      return a.addDirs.includes(dir);
     });
     if (already) {
       this.post({ roomId, authorId: "system", kind: "notice", text: `${targets.join(", ")} already ${targets.length === 1 ? "has" : "have"} access to ${resolved.label} — carry on.` });
@@ -1388,7 +1440,9 @@ export class Orchestrator {
       `\nPayag ka? Tap one below.`;
     this.post({ roomId, authorId: room.orchestratorId, kind: "handoff", text, directedBy: null, choices });
     this.recordNotify(roomId, withRoles(text + "\n\n1. Allow for this goal\n2. Always allow\n3. Deny", roster), "escalation");
-    state.stopReason = "blocked";
+    // Waiting on a button is not "blocked": nothing auto-resumes it, and the
+    // per-goal grants it may already hold are kept until the goal is over.
+    state.stopReason = "awaiting_access";
     return true;
   }
 
@@ -1619,6 +1673,13 @@ export class Orchestrator {
         mcpConfigs: opts.agent.mcpConfigs,
         ...(opts.schema ? { schema: opts.schema } : {}),
         phase: opts.busyPhase,
+        // An agent that may write runs inside the folder it may write to.
+        cwd:
+          !opts.chatTurn &&
+          (opts.agent.tools.includes("Write") || opts.agent.tools.includes("Edit")) &&
+          opts.agent.addDirs[0]
+            ? opts.agent.addDirs[0]
+            : config.root,
         signal: turnAbort.signal,
       })) {
         if (event.type === "delta") {
@@ -2209,6 +2270,9 @@ export class Orchestrator {
         `Answer "blocked" only when the work has actually stopped and nothing in`,
         `this room can restart it: you need a decision, a credential, a change to`,
         `the code, or access that none of us has. Then say exactly what you need.`,
+        `If what you need is ACCESS — a folder, the wiki, a tool — put it in`,
+        `accessRequest, not in blocker: Dominic gets Allow buttons, and the room`,
+        `does not stop for a paragraph. Never ask anyone here to edit frontmatter.`,
         "",
         `And mark the board the same way. A step that is only waiting its turn is`,
         `"pending", never "blocked" — "depends on step 1" is the single most common`,
@@ -2281,9 +2345,19 @@ export class Orchestrator {
       return false;
     }
 
-    // A structured access request beats a prose blocker: buttons, not a paragraph.
-    if (out.accessRequest) {
-      const wait = this.askAccess({ roomId, room, state, roster, agents, request: out.accessRequest });
+    // A structured access request beats a prose blocker: buttons, not a
+    // paragraph. And a prose blocker that is really about access — "needs
+    // Write tools and add_dirs for X", "no agent can edit the frontmatter" —
+    // becomes buttons anyway, whatever the orchestrator called it.
+    const askText = [out.blocker ?? "", out.needFromDominic ?? "", ...(out.steps ?? []).map((s) => s.note ?? "")].join(" ");
+    const inferredAsk =
+      out.accessRequest ??
+      (() => {
+        const found = inferAsk(askText);
+        return found ? { ...found, agents: [], reason: "Ito ang kulang ng room para ituloy." } : null;
+      })();
+    if (inferredAsk) {
+      const wait = this.askAccess({ roomId, room, state, roster, agents, request: inferredAsk });
       if (wait) return false;
     }
 
@@ -2370,7 +2444,16 @@ export class Orchestrator {
     });
     // Forced past the rate limiter: a room that has stopped working is exactly
     // the message that must not be dropped for being too soon after the last.
-    this.recordNotify(roomId, report, "escalation");
+    // Unless it is the same blocker the room already sent: a goal that now
+    // auto-resumes after "blocked" would otherwise ping his phone three times
+    // for one problem, which is the thing L0 forbids the agents from doing.
+    const key = `${need}|${blocker}`.toLowerCase().replace(/\s+/g, " ").trim();
+    if (state.goalId && this.lastBlocker.get(state.goalId) === key) {
+      this.post({ roomId, authorId: "system", kind: "event", text: "same blocker as last time — not sent to WhatsApp again" });
+    } else {
+      if (state.goalId) this.lastBlocker.set(state.goalId, key);
+      this.recordNotify(roomId, report, "escalation");
+    }
     return false;
   }
 
@@ -2646,9 +2729,35 @@ export class Orchestrator {
       return;
     }
 
+    // "Hinahayaan kita sa lahat": grant what the last stuck goal was asking
+    // for and pick that goal back up, instead of planning a fresh goal about
+    // resuming the old one.
+    let resumeId = resumeGoalId;
+    if (!resumeId && BLANKET.test(humanText) && !/^\s*\[relayed via/i.test(humanText)) {
+      const last = listGoals(roomId, 1)[0];
+      if (last && last.status !== "done") {
+        const asked = inferAsk([last.title, ...last.steps.map((s) => `${s.title} ${s.note ?? ""}`)].join(" "));
+        if (asked) {
+          const owners = [
+            ...new Set(last.steps.filter((s) => s.status !== "done" && s.ownerId).map((s) => s.ownerId as string)),
+          ];
+          this.post({ roomId, authorId: "human", kind: "human", text: humanText });
+          this.applyAccess({
+            roomId,
+            orchestrator,
+            roster,
+            agents,
+            humanText: `i-access — ${humanText}`,
+            request: { kind: asked.kind, path: asked.path, agents: owners },
+          });
+          resumeId = last.id;
+        }
+      }
+    }
+
     let resumed: Goal | null = null;
-    if (resumeGoalId) {
-      resumed = reopenGoal(resumeGoalId);
+    if (resumeId) {
+      resumed = reopenGoal(resumeId);
       if (!resumed) {
         this.emit({ type: "error", roomId, detail: "That goal no longer exists." });
         return;
@@ -2702,7 +2811,7 @@ export class Orchestrator {
       // exist, and re-planning them would produce a second goal describing
       // the same work — which is exactly what retyping the prompt does, and
       // exactly what resume exists to avoid.
-      if (!resumeGoalId) {
+      if (!resumeId) {
         // --- plan first, so progress is measurable against something ----------
         state.speaking = orchestrator.id;
         this.publishRun(state);
@@ -3031,7 +3140,7 @@ export class Orchestrator {
         // so; Resume grants a fresh one. Blocked, not turn_cap, so it never
         // picks itself back up and spends another.
         if (config.goalCostCapUsd > 0 && state.costUsd >= config.goalCostCapUsd) {
-          state.stopReason = "blocked";
+          state.stopReason = "paused";
           const spent = `$${state.costUsd.toFixed(2)}`;
           this.post({
             roomId,
@@ -3443,7 +3552,7 @@ export class Orchestrator {
         if (goal) {
           this.emit({ type: "goal", goal });
         }
-        if (goal && state.stopReason !== "blocked") {
+        if (goal && !["blocked", "awaiting_access", "paused"].includes(state.stopReason ?? "")) {
           // Every finished run reports to WhatsApp, prompt included — forced
           // past the rate limiter, because this is the message that matters.
           // The last thing an agent actually said IS the result. Without this
@@ -3521,8 +3630,12 @@ export class Orchestrator {
       // it finished, whatever they called it.
       //
       // So: unfinished board + a stop that was not a human decision = carry on.
+      // "blocked" resumes too, now: a room that misjudged a wall gets another
+      // go, bounded by maxAutoResumes, and a repeat blocker is not re-sent.
+      // Only a human Stop, a run waiting on an access button, or a cost pause
+      // stay down.
       let resumedNow = false;
-      const NEVER_RESUME = new Set(["stopped", "blocked"]);
+      const NEVER_RESUME = new Set(["stopped", "awaiting_access", "paused"]);
       if (state.goalId && !NEVER_RESUME.has(state.stopReason ?? "")) {
         const goal = getGoal(state.goalId);
         const open = goal?.steps.filter((st) => st.status !== "done").length ?? 0;
@@ -3567,7 +3680,9 @@ export class Orchestrator {
         // A run paused on an access button holds no per-goal grant yet, so
         // there is nothing to return; a goal that is over, or stopped by a
         // human, hands its per-goal grants back.
-        if (!resumedNow && state.stopReason !== "blocked") this.revokeTemp(state.goalId, roomId);
+        if (!resumedNow && !["awaiting_access", "paused"].includes(state.stopReason ?? "")) {
+          this.revokeTemp(state.goalId, roomId);
+        }
       }
 
       const elapsed = Date.now() - state.startedAt;

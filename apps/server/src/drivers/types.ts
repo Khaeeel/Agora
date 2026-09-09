@@ -31,6 +31,12 @@ export interface DriverRequest {
    * turns but not for the plan the whole run is then measured against.
    */
   phase?: string;
+  /**
+   * Working directory of the spawned CLI. The repo root by default; an agent
+   * holding Write or Edit runs inside its first add_dir instead, so the one
+   * folder it can change is the one Dominic opened — never the agora repo.
+   */
+  cwd?: string;
   signal: AbortSignal;
 }
 

@@ -70,7 +70,7 @@ export class ClaudeCliDriver implements AgentDriver {
 
   async *run(req: DriverRequest): AsyncIterable<DriverEvent> {
     const child = spawn(config.claudeBin, this.buildArgs(req), {
-      cwd: config.root,
+      cwd: req.cwd ?? config.root,
       stdio: ["pipe", "pipe", "pipe"],
       signal: req.signal,
     });
