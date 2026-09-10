@@ -9,7 +9,7 @@ effort: medium
 forged_by: fury
 forged_at: 2026-09-09T08:34:39.550Z
 tools: ["WebSearch", "WebFetch", "Bash"]
-allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
+allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-edit.sh:*)"]
 ---
 
 # Agent: Kooya Runner
