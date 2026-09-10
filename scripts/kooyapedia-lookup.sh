@@ -8,9 +8,10 @@
 # this script asks it over the network — GET only, nothing is ever written —
 # and prints plain text capped so one call cannot flood a turn.
 #
-#   kooyapedia-lookup.sh search <word> [word...]   ranked hits: slug · title · space · snippet
+#   kooyapedia-lookup.sh search <word> [word...]   ranked hits (+ stems/aliases if empty)
 #   kooyapedia-lookup.sh show <slug>               one article as plain text
 #   kooyapedia-lookup.sh recent                    articles linked from the front page
+#   kooyapedia-lookup.sh projects [name]           wiki + C:\Projects roster (optional fuzzy)
 #
 # The base URL is the Windows host as seen from WSL (the default gateway),
 # overridable with KOOYAPEDIA_URL. Exit 64 usage, 77 refused, 70 unreachable.
@@ -19,7 +20,7 @@ set -uo pipefail
 AGORA_ROOT=/home/dominickooya/agora
 SLUG='^[a-z0-9][a-z0-9._-]{0,120}$'
 
-usage() { sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 64; }
+usage() { sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 64; }
 refuse() { echo "kooyapedia-lookup.sh: $*" >&2; exit 77; }
 
 [ $# -ge 1 ] || usage
@@ -28,6 +29,7 @@ case "$CMD" in
   search) [ $# -ge 1 ] || refuse "search needs at least one word" ;;
   show)   [ $# -eq 1 ] || usage; [[ "$1" =~ $SLUG ]] || refuse "bad slug '$1'" ;;
   recent) [ $# -eq 0 ] || usage ;;
+  projects) ;;
   *) usage ;;
 esac
 

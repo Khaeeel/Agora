@@ -244,6 +244,11 @@ export function App() {
       {agentModal && (
         <AgentEditor
           {...(agentModal === "new" ? {} : { agent: agentModal })}
+          models={state.agentModels}
+          effortEnabled={state.effortEnabled}
+          defaultModel={state.defaultModel}
+          defaultEffort={state.defaultEffort}
+          driver={state.driver}
           onClose={() => setAgentModal(null)}
           onSaved={() => void refreshRooms()}
         />

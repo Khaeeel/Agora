@@ -44,6 +44,8 @@ export interface Message {
   choices: Choice[] | null;
   /** The label he picked, once he has. Null while the question is open. */
   answeredWith: string | null;
+  /** Which CLI produced it: "claude-cli" | "cursor-cli". Null for human and system rows. */
+  driver: string | null;
   /** Parsed markers: the speech act and who the author handed to. */
   act?: string | null;
   nextId?: string | null;
@@ -136,10 +138,21 @@ export interface RunState {
   turnStartedAt: number | null;
   lastTurnMs: number | null;
   lastTurnCostUsd: number | null;
+  driver: string | null;
 }
 
 export type ServerEvent =
-  | { type: "hello"; rooms: Room[]; agents: Agent[]; notifyLive: boolean }
+  | {
+      type: "hello";
+      rooms: Room[];
+      agents: Agent[];
+      notifyLive: boolean;
+      driver?: string;
+      agentModels?: Array<{ id: string; label: string }>;
+      effortEnabled?: boolean;
+      defaultModel?: string;
+      defaultEffort?: string;
+    }
   | { type: "agents"; agents: Agent[] }
   | { type: "rooms"; rooms: Room[] }
   | { type: "message"; message: Message }

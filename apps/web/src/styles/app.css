@@ -3749,3 +3749,7 @@ samp,
   font-size: 12px;
   text-align: center;
 }
+
+/* Run bar: which CLI the turns are on right now. */
+.runbar__drv{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid var(--hairline);color:var(--text-3)}
+.runbar__drv--cursor{color:var(--cyan);border-color:rgba(var(--cyan-rgb),.45);background:rgba(var(--cyan-rgb),.10)}

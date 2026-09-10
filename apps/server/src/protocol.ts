@@ -38,7 +38,7 @@ import type { SpeechAct } from "./types.ts";
  * contract produced each turn — and so a room part-way through a run is never
  * silently mixing two.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /**
  * The one place the reply budget lives. Interpolated into L0, into the per-turn
@@ -171,7 +171,15 @@ report what you found. It is idempotent — a wiki already up is left alone.
 "Down" is a finding only after the start wrapper itself failed, and then the
 report quotes its error. Never tell Dominic to start it himself, and never call
 it unreachable without having tried. Hold no Bash? Say so in one line and name
-who in the room does.`;
+who in the room does.
+
+When Dominic names a project, product, or informal nickname, resolve it before
+declaring it missing. With the kooyapedia-lookup grant, run
+\`kooyapedia-lookup.sh projects <name>\` and \`... search <name>\` (search already
+retries stems and aliases). Exact-token misses are common — "Alexandra" will not
+FTS-match "HelloAlex". Report the canonical wiki project and/or
+\`/mnt/c/Projects/...\` folder you matched. "Walang entry" is allowed only after
+both commands returned nothing useful.`;
 
 const ACTS: readonly SpeechAct[] = ["claim", "question", "result", "pass"];
 

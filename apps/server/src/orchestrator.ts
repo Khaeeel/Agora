@@ -1139,8 +1139,63 @@ export class Orchestrator {
 
   private readonly runs = new Map<string, { abort: AbortController; state: RunState }>();
 
+  /**
+   * Human messages that arrived while a run held the room.
+   *
+   * The UI used to refuse send with "It'll send when the room is free" and then
+   * not send at all. Claude-style chat lets you keep typing; we do the same:
+   * post the human line immediately, queue the work, drain when the run ends.
+   */
+  private readonly inbox = new Map<
+    string,
+    Array<
+      | { kind: "start"; humanText: string; resumeGoalId?: string; skipPost: boolean }
+      | { kind: "direct"; to: string; humanText: string; skipPost: boolean }
+    >
+  >();
+
   private readonly emit: Emit;
   private readonly getAgents: () => Map<string, Agent>;
+
+  /** Enqueue work for a busy room and tell the transcript it is waiting. */
+  private enqueue(
+    roomId: string,
+    item:
+      | { kind: "start"; humanText: string; resumeGoalId?: string; skipPost: boolean }
+      | { kind: "direct"; to: string; humanText: string; skipPost: boolean },
+  ): void {
+    const q = this.inbox.get(roomId) ?? [];
+    q.push(item);
+    this.inbox.set(roomId, q);
+    if (item.kind === "direct" || item.humanText.trim()) {
+      this.post({
+        roomId,
+        authorId: "system",
+        kind: "event",
+        text: `queued · ${q.length} waiting — runs when this turn finishes`,
+      });
+    }
+  }
+
+  /** Kick the next waiting human message, if any. Called after a run releases. */
+  private drainInbox(roomId: string): boolean {
+    const q = this.inbox.get(roomId);
+    if (!q?.length) return false;
+    const next = q.shift()!;
+    if (q.length) this.inbox.set(roomId, q);
+    else this.inbox.delete(roomId);
+    // Off this stack: runs.delete just happened and start/direct refuse a live run.
+    setTimeout(() => {
+      const run =
+        next.kind === "start"
+          ? this.start(roomId, next.humanText, next.resumeGoalId, { skipPost: next.skipPost })
+          : this.direct(roomId, next.to, next.humanText, { skipPost: next.skipPost });
+      void run.catch((err: unknown) =>
+        console.error("[inbox] drain failed:", err instanceof Error ? err.message : err),
+      );
+    }, 0);
+    return true;
+  }
 
   constructor(emit: Emit, getAgents: () => Map<string, Agent>) {
     this.emit = emit;
@@ -1672,6 +1727,8 @@ export class Orchestrator {
     durationMs: number;
     /** Identifies the exact system prompt this turn ran under. */
     promptSha: string;
+    /** Which CLI ran it — shown in the transcript and the run bar. */
+    driver: string;
   }> {
     const run = this.runs.get(opts.roomId);
     if (run && this.gate.saturated) {
@@ -1716,7 +1773,12 @@ export class Orchestrator {
       let costUsd: number | null = null;
       let isError = false;
 
-      for await (const event of this.driverFor(opts.busyPhase).run({
+      const driver = this.driverFor(opts.busyPhase);
+      if (run) {
+        run.state.driver = driver.id;
+        this.publishRun(run.state);
+      }
+      for await (const event of driver.run({
         systemPrompt,
         prompt: opts.prompt,
         model: opts.model ?? opts.agent.model,
@@ -1773,6 +1835,7 @@ export class Orchestrator {
         timedOut,
         durationMs: Date.now() - turnStartedAt,
         promptSha,
+        driver: driver.id,
       };
     } finally {
       clearTimeout(turnTimer);
@@ -1820,7 +1883,9 @@ export class Orchestrator {
       signal: opts.signal,
       chatTurn: true,
       effort: "low",
-      model: config.model,
+      // Stay on the active driver seat — config.model is the Claude default and
+      // would send a bare Max-plan id through cursor-agent under AGORA_DRIVER=cursor.
+      model: opts.agent.model,
       busyPhase: "generating",
       prompt: [
         `You just wrote this reply (${words} words; the room limit for a \`${act ?? "claim"}\` is ${limit}):`,
@@ -1984,6 +2049,7 @@ export class Orchestrator {
           costUsd: sumCost(result.costUsd, guarded.costUsd),
           durationMs: result.durationMs,
           promptSha: result.promptSha,
+          driver: result.driver,
         });
       }
     }
@@ -2088,6 +2154,7 @@ export class Orchestrator {
       costUsd: sumCost(result.costUsd, guarded.costUsd),
       durationMs: result.durationMs,
       promptSha: result.promptSha,
+      driver: result.driver,
     });
     return "ok";
   }
@@ -2616,9 +2683,30 @@ export class Orchestrator {
    * to it alone. Look-words keep its tools on; a folder or KooyaPedia named
    * in the message is granted first, the same way a room message grants it.
    */
-  async direct(roomId: string, to: string, humanText: string): Promise<void> {
+  async direct(
+    roomId: string,
+    to: string,
+    humanText: string,
+    opts: { skipPost?: boolean } = {},
+  ): Promise<void> {
     if (this.runs.has(roomId)) {
-      this.emit({ type: "error", roomId, detail: "A run is active in this room — wait for it, or stop it, then send again." });
+      // Land in the transcript now so Dominic sees his chat; run after.
+      if (!opts.skipPost) {
+        const room = getRoom(roomId);
+        const privateThread = room?.name.startsWith("dm:") === true;
+        this.post({
+          roomId,
+          authorId: "human",
+          kind: "human",
+          text: privateThread ? humanText : `@${to.trim().toLowerCase()} ${humanText}`,
+        });
+      }
+      this.enqueue(roomId, {
+        kind: "direct",
+        to,
+        humanText,
+        skipPost: true,
+      });
       return;
     }
     const room = getRoom(roomId);
@@ -2645,12 +2733,14 @@ export class Orchestrator {
     }
 
     const privateThread = room.name.startsWith("dm:");
-    this.post({
-      roomId,
-      authorId: "human",
-      kind: "human",
-      text: privateThread ? humanText : `@${agent.id} ${humanText}`,
-    });
+    if (!opts.skipPost) {
+      this.post({
+        roomId,
+        authorId: "human",
+        kind: "human",
+        text: privateThread ? humanText : `@${agent.id} ${humanText}`,
+      });
+    }
 
     const asksToLook = LOOK_WORDS.test(humanText);
     if (asksToLook) {
@@ -2686,6 +2776,7 @@ export class Orchestrator {
       turnStartedAt: null,
       lastTurnMs: null,
       lastTurnCostUsd: null,
+      driver: null,
     };
     this.runs.set(roomId, { abort, state });
     this.publishRun(state);
@@ -2752,6 +2843,7 @@ export class Orchestrator {
           costUsd: sumCost(reply.costUsd, guarded.costUsd),
           durationMs: reply.durationMs,
           promptSha: reply.promptSha,
+          driver: reply.driver,
         });
         // A private thread stays on the screen it was typed on.
         if (!privateThread) {
@@ -2775,12 +2867,26 @@ export class Orchestrator {
       this.publishRun(state);
       this.runs.delete(roomId);
       this.emit({ type: "runs", runs: this.listRuns() });
+      this.drainInbox(roomId);
     }
   }
 
-  async start(roomId: string, humanText: string, resumeGoalId?: string): Promise<void> {
+  async start(
+    roomId: string,
+    humanText: string,
+    resumeGoalId?: string,
+    opts: { skipPost?: boolean } = {},
+  ): Promise<void> {
     if (this.runs.has(roomId)) {
-      this.emit({ type: "error", roomId, detail: "A run is already active in this room." });
+      if (humanText.trim() && !opts.skipPost) {
+        this.post({ roomId, authorId: "human", kind: "human", text: humanText });
+      }
+      this.enqueue(roomId, {
+        kind: "start",
+        humanText,
+        resumeGoalId,
+        skipPost: Boolean(humanText.trim()) || Boolean(opts.skipPost),
+      });
       return;
     }
 
@@ -2817,7 +2923,9 @@ export class Orchestrator {
           const owners = [
             ...new Set(last.steps.filter((s) => s.status !== "done" && s.ownerId).map((s) => s.ownerId as string)),
           ];
-          this.post({ roomId, authorId: "human", kind: "human", text: humanText });
+          if (!opts.skipPost) {
+            this.post({ roomId, authorId: "human", kind: "human", text: humanText });
+          }
           this.applyAccess({
             roomId,
             orchestrator,
@@ -2839,7 +2947,7 @@ export class Orchestrator {
         return;
       }
       this.emit({ type: "goal", goal: resumed });
-    } else {
+    } else if (!opts.skipPost) {
       this.post({ roomId, authorId: "human", kind: "human", text: humanText });
     }
 
@@ -2860,6 +2968,7 @@ export class Orchestrator {
       turnStartedAt: null,
       lastTurnMs: null,
       lastTurnCostUsd: null,
+      driver: null,
     };
     if (resumed) {
       state.goalId = resumed.id;
@@ -3137,6 +3246,7 @@ export class Orchestrator {
               costUsd: sumCost(reply.costUsd, guarded.costUsd),
               durationMs: reply.durationMs,
               promptSha: reply.promptSha,
+              driver: reply.driver,
             });
             const answer = withRoles(
               `💬 ${responder.name} (${responder.role}) answered:\n\n` +
@@ -3456,6 +3566,7 @@ export class Orchestrator {
             costUsd: decisionResult.costUsd,
             durationMs: decisionResult.durationMs,
             promptSha: decisionResult.promptSha,
+            driver: decisionResult.driver,
           });
         }
 
@@ -3715,6 +3826,9 @@ export class Orchestrator {
           console.error("[mind-stone] compaction failed:", err instanceof Error ? err.message : err),
       );
 
+      // Human messages typed during the run take priority over auto-resume.
+      const drained = this.drainInbox(roomId);
+
       // ── carry on by itself ────────────────────────────────────────────
       //
       // A run that stops with steps still open has not finished, and making
@@ -3738,10 +3852,11 @@ export class Orchestrator {
       // "blocked" resumes too, now: a room that misjudged a wall gets another
       // go, bounded by maxAutoResumes, and a repeat blocker is not re-sent.
       // Only a human Stop, a run waiting on an access button, or a cost pause
-      // stay down.
+      // stay down. A waiting inbox also stays down — Dominic's next message
+      // already owns the room.
       let resumedNow = false;
       const NEVER_RESUME = new Set(["stopped", "awaiting_access", "paused"]);
-      if (state.goalId && !NEVER_RESUME.has(state.stopReason ?? "")) {
+      if (!drained && state.goalId && !NEVER_RESUME.has(state.stopReason ?? "")) {
         const goal = getGoal(state.goalId);
         const open = goal?.steps.filter((st) => st.status !== "done").length ?? 0;
         const spent = this.resumes.get(state.goalId) ?? 0;

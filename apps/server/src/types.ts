@@ -116,6 +116,8 @@ export interface Message {
    * Null on rows the system wrote on an agent's behalf.
    */
   promptSha: string | null;
+  /** Which CLI produced this turn: "claude-cli" | "cursor-cli". Null for human and system rows. */
+  driver: string | null;
 }
 
 export interface Room {
@@ -221,11 +223,23 @@ export interface RunState {
   lastTurnMs: number | null;
   /** Cost of the last finished turn. */
   lastTurnCostUsd: number | null;
+  /** Driver of the turn in flight or just finished — what the run bar shows as "on Cursor". */
+  driver: string | null;
 }
 
 /** Everything the server pushes down the WebSocket. */
 export type ServerEvent =
-  | { type: "hello"; rooms: Room[]; agents: Agent[]; notifyLive: boolean }
+  | {
+      type: "hello";
+      rooms: Room[];
+      agents: Agent[];
+      notifyLive: boolean;
+      driver?: string;
+      agentModels?: Array<{ id: string; label: string }>;
+      effortEnabled?: boolean;
+      defaultModel?: string;
+      defaultEffort?: string;
+    }
   | { type: "agents"; agents: Agent[] }
   | { type: "rooms"; rooms: Room[] }
   | { type: "message"; message: Message }

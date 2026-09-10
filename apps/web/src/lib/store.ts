@@ -34,6 +34,12 @@ export interface AgoraState {
   runs: RunState[];
   live: Live | null;
   notifyLive: boolean;
+  /** claude | cursor | hybrid — drives the Create Agent model picker. */
+  driver: string;
+  agentModels: Array<{ id: string; label: string }>;
+  effortEnabled: boolean;
+  defaultModel: string;
+  defaultEffort: string;
   error: string | null;
   /** Transient rate-limit flash for the current room. */
   rateLimit: string | null;
@@ -53,6 +59,16 @@ export function useAgora(roomId: string | null) {
     runs: [],
     live: null,
     notifyLive: false,
+    driver: "cursor",
+    agentModels: [
+      { id: "auto", label: "auto (Cursor routes)" },
+      { id: "composer-2.5", label: "composer-2.5" },
+      { id: "claude-sonnet-5-medium", label: "claude-sonnet-5-medium" },
+      { id: "claude-opus-5-high", label: "claude-opus-5-high" },
+    ],
+    effortEnabled: false,
+    defaultModel: "auto",
+    defaultEffort: "n/a",
     error: null,
     rateLimit: null,
   });
@@ -152,6 +168,11 @@ export function useAgora(roomId: string | null) {
                 rooms: event.rooms,
                 agents: event.agents,
                 notifyLive: event.notifyLive,
+                driver: event.driver ?? s.driver,
+                agentModels: event.agentModels ?? s.agentModels,
+                effortEnabled: event.effortEnabled ?? s.effortEnabled,
+                defaultModel: event.defaultModel ?? s.defaultModel,
+                defaultEffort: event.defaultEffort ?? s.defaultEffort,
               };
             case "agents":
               return { ...s, agents: event.agents };
@@ -365,8 +386,25 @@ export function useAgora(roomId: string | null) {
 
   const refreshRooms = useCallback(async (): Promise<void> => {
     const res = await fetch("/api/state");
-    const data = (await res.json()) as { rooms: Room[]; agents: Agent[] };
-    setState((s) => ({ ...s, rooms: data.rooms, agents: data.agents }));
+    const data = (await res.json()) as {
+      rooms: Room[];
+      agents: Agent[];
+      driver?: string;
+      agentModels?: Array<{ id: string; label: string }>;
+      effortEnabled?: boolean;
+      defaultModel?: string;
+      defaultEffort?: string;
+    };
+    setState((s) => ({
+      ...s,
+      rooms: data.rooms,
+      agents: data.agents,
+      driver: data.driver ?? s.driver,
+      agentModels: data.agentModels ?? s.agentModels,
+      effortEnabled: data.effortEnabled ?? s.effortEnabled,
+      defaultModel: data.defaultModel ?? s.defaultModel,
+      defaultEffort: data.defaultEffort ?? s.defaultEffort,
+    }));
   }, []);
 
   return {

@@ -158,6 +158,10 @@ db.exec(`
 
   // Which exact system prompt produced this turn — see Message.promptSha.
   if (!has("prompt_sha")) db.exec(`ALTER TABLE messages ADD COLUMN prompt_sha TEXT`);
+
+  // Which CLI produced the turn — see Message.driver. Dominic runs Cursor when the
+  // Claude pool is spent and wants to see, per message, which one answered.
+  if (!has("driver")) db.exec(`ALTER TABLE messages ADD COLUMN driver TEXT`);
 }
 
 // Per-goal tailoring of the agents working it — see Goal.tailor.
@@ -252,6 +256,7 @@ function rowToMessage(r: Record<string, unknown>): Message {
     refs: r["refs"] == null ? [] : (JSON.parse(String(r["refs"])) as number[]),
     nextId: r["next_id"] == null ? null : String(r["next_id"]),
     promptSha: r["prompt_sha"] == null ? null : String(r["prompt_sha"]),
+    driver: r["driver"] == null ? null : String(r["driver"]),
   };
 }
 
@@ -754,6 +759,7 @@ export function addMessage(input: {
   refs?: number[];
   nextId?: string | null;
   promptSha?: string | null;
+  driver?: string | null;
 }): Message {
   // The server is the only writer (every path that starts work goes through the
   // WebSocket), so reading the high-water mark and inserting after it cannot
@@ -782,11 +788,12 @@ export function addMessage(input: {
     refs: input.refs ?? [],
     nextId: input.nextId ?? null,
     promptSha: input.promptSha ?? null,
+    driver: input.driver ?? null,
   };
   db.prepare(
     `INSERT INTO messages
-       (id, room_id, seq, author_id, kind, text, directed_by, created_at, cost_usd, duration_ms, delivered, choices, protocol_version, act, refs, next_id, prompt_sha)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, room_id, seq, author_id, kind, text, directed_by, created_at, cost_usd, duration_ms, delivered, choices, protocol_version, act, refs, next_id, prompt_sha, driver)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     msg.id,
     msg.roomId,
@@ -805,6 +812,7 @@ export function addMessage(input: {
     msg.refs.length ? JSON.stringify(msg.refs) : null,
     msg.nextId,
     msg.promptSha,
+    msg.driver,
   );
   return msg;
 }

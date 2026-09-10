@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import cors from "@fastify/cors";
 import { config, notifyIsLive } from "./config.ts";
+import { agentModelsForDriver } from "./agent-models.ts";
 import {
   agentMemory,
   answerChoice,
@@ -69,13 +70,21 @@ export async function buildServer(): Promise<
 
   // ---- REST ---------------------------------------------------------------
 
-  app.get("/api/state", async () => ({
-    rooms: listRooms(),
-    agents: [...agents.values()],
-    notifyLive: notifyIsLive(),
-    notifyJid: config.notifyJid || null,
-    statuses: statuses(),
-  }));
+  app.get("/api/state", async () => {
+    const modelCatalog = agentModelsForDriver(config.driver);
+    return {
+      rooms: listRooms(),
+      agents: [...agents.values()],
+      notifyLive: notifyIsLive(),
+      notifyJid: config.notifyJid || null,
+      statuses: statuses(),
+      driver: config.driver,
+      agentModels: modelCatalog.models,
+      effortEnabled: modelCatalog.effortEnabled,
+      defaultModel: modelCatalog.defaultModel,
+      defaultEffort: modelCatalog.defaultEffort,
+    };
+  });
 
   app.get<{ Params: { id: string } }>("/api/rooms/:id/messages", async (req) => ({
     messages: listMessages(req.params.id),
@@ -275,12 +284,18 @@ export async function buildServer(): Promise<
 
   app.get("/ws", { websocket: true }, (socket) => {
     sockets.add(socket);
+    const modelCatalog = agentModelsForDriver(config.driver);
     socket.send(
       JSON.stringify({
         type: "hello",
         rooms: listRooms(),
         agents: [...agents.values()] as Agent[],
         notifyLive: notifyIsLive(),
+        driver: config.driver,
+        agentModels: modelCatalog.models,
+        effortEnabled: modelCatalog.effortEnabled,
+        defaultModel: modelCatalog.defaultModel,
+        defaultEffort: modelCatalog.defaultEffort,
       } satisfies ServerEvent),
     );
     socket.send(JSON.stringify({ type: "status", statuses: statuses() } satisfies ServerEvent));

@@ -4,23 +4,23 @@ A chatroom where the participants are AI agents. One agent directs the room,
 the others do the work, and anything a human needs to know gets pushed to
 WhatsApp through OpenClaw.
 
-You can use it from the web UI, or drive it via **Claude** and **Cursor**.
+You can use it from the web UI, or drive it via **Cursor** (default) and **Claude**.
 
 ```
 browser (Vite :5183) ──WS/REST──► Fastify server (:8787)
                                       │
                                       ├─ Orchestrator (plan → dispatch → review)
                                       ├─ Agent registry (agents/*.md + file watcher)
-                                      ├─ Claude / Cursor CLI drivers
+                                      ├─ Cursor / Claude CLI drivers
                                       │     └─ one child process per agent turn
                                       └─ openclaw message send ──► WhatsApp
                                               ▲
 WhatsApp (OpenClaw) ── scripts/agora-ask.mjs ─┘  (inbound relay)
 ```
 
-Runs on your Claude Max subscription via the Claude Code CLI (and optionally
-Cursor). **There is no API key anywhere in this app** — auth comes from
-`~/.claude` / `~/.cursor` OAuth.
+Runs on your **Cursor** subscription by default (`AGORA_DRIVER=cursor`), with
+Claude Max available as a fallback. **There is no API key anywhere in this app**
+— auth comes from `~/.cursor` / `~/.claude` OAuth.
 
 ## Architecture
 
@@ -51,7 +51,7 @@ code so prompts cannot drift.
 |---|---|
 | **Orchestrator** | Plan → answer or work → dispatch specialists → progress review → stop |
 | **Registry** | Parse/write/forge agents, build system prompts, watch `agents/` for reloads |
-| **Drivers** | `claude -p` (default) or `cursor-agent`; `AGORA_DRIVER=claude\|cursor\|hybrid` |
+| **Drivers** | `cursor-agent` (default) or `claude -p`; `AGORA_DRIVER=cursor\|claude\|hybrid` |
 | **Protocol markers** | First line `kind:`, body `[#seq]`, last line `@next:` — stamped with protocol version |
 | **Grants** | Merge tools/dirs/allow into frontmatter; Agora’s own repo is never grantable |
 | **Notify** | WhatsApp hop via OpenClaw; dry-run by default; not a session trigger |
@@ -81,8 +81,8 @@ Every hard stop is enforced in code, not left to the model:
 | Stop button | kills the child process | — |
 
 `AGORA_MAX_TURNS` is a **review interval**, not a hard stop. Concurrency stays
-low on purpose: these processes share Max-plan rate limits with normal Claude
-Code use.
+low on purpose: Cursor and Claude CLIs share account rate limits with your
+normal IDE use.
 
 ### Repo layout
 
@@ -101,8 +101,12 @@ Code use.
 ### Claude and Cursor
 
 - **Browser** — rooms, streaming, goals, Allow/choices, stop/resume, agent CRUD.
-- **Claude CLI** — default engine; full `--system-prompt` + JSON schema validation; per-agent `--tools` / `--allowedTools`.
-- **Cursor CLI** — optional / hybrid seat; weaker system-prompt story; mode flags instead of per-agent Shell grants.
+- **Cursor CLI** — **primary engine** (`AGORA_DRIVER=cursor`); Create Agent
+  offers Cursor model ids; Claude-style `model:` + `effort:` in agent files are
+  baked into Cursor ids at load time. Weaker system-prompt story; mode flags
+  instead of per-agent Shell grants.
+- **Claude CLI** — opt-in via `AGORA_DRIVER=claude`; full `--system-prompt` +
+  JSON schema validation; per-agent `--tools` / `--allowedTools`.
 - **Hybrid** — agent prose on Cursor; planning / deciding / compacting on Claude.
 
 Editing `agents/*.md` on disk also works: the watcher reloads the roster without

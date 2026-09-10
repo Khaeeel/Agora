@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "no
 import { join, basename } from "node:path";
 import { parse as parseYaml } from "yaml";
 import chokidar from "chokidar";
+import { toCursorModelId } from "../agent-models.ts";
 import { config } from "../config.ts";
 import { phoneStyleText, protocolText } from "../protocol.ts";
 import type { Agent, Tailor } from "../types.ts";
@@ -50,22 +51,30 @@ export function parseAgentFile(path: string): Agent {
     instructions: s.get("instructions") ?? "",
     personality: s.get("personality") ?? "",
     color: typeof meta["color"] === "string" ? meta["color"] : "#7A6A5D",
-    // REPORT WHAT ACTUALLY RUNS, not what the file asks for. On the cursor
-    // driver with a pinned model (the default, "auto"), the per-agent model:
-    // and effort: lines are ignored entirely — Cursor has no haiku at all and
-    // bakes effort into the model id. Passing the frontmatter value through
-    // would leave every agent card claiming claude-opus-5 while Composer did
-    // the work, which is the same misattribution the room is not allowed to
-    // make about its own runs. When cursorModel is blank the fallback DOES
-    // translate the agent's own model, so the file's value is honest again.
-    model:
-      config.driver === "cursor" && config.cursorModel.trim()
-        ? config.cursorModel.trim()
-        : typeof meta["model"] === "string"
-          ? meta["model"]
-          : config.model,
+    // Cursor bakes effort into the model id. Under cursor/hybrid we resolve the
+    // frontmatter pair to a Cursor-valid id here so the UI and the driver agree
+    // (bare `claude-sonnet-5` is rejected by cursor-agent). Files may still
+    // store Claude-style model+effort; baking is in-memory until the next save.
+    model: (() => {
+      const fileModel =
+        typeof meta["model"] === "string" && meta["model"].trim()
+          ? meta["model"].trim()
+          : "";
+      const fileEffort =
+        typeof meta["effort"] === "string" && meta["effort"].trim()
+          ? meta["effort"].trim()
+          : config.effort;
+      if (config.driver === "cursor" || config.driver === "hybrid") {
+        const fallback = config.cursorModel.trim() || "auto";
+        // auto = subscription seat only. Do not bake Claude frontmatter into
+        // API model ids that burn Pro+ usage limits.
+        if (fallback === "auto") return "auto";
+        return toCursorModelId(fileModel, fileEffort, fallback);
+      }
+      return fileModel || config.model;
+    })(),
     effort:
-      config.driver === "cursor" && config.cursorModel.trim()
+      config.driver === "cursor" || config.driver === "hybrid"
         ? "n/a"
         : typeof meta["effort"] === "string"
           ? meta["effort"]

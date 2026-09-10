@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { toCursorModelId } from "../agent-models.ts";
 import { config } from "../config.ts";
 import type { AgentDriver, DriverEvent, DriverRequest } from "./types.ts";
 
@@ -65,34 +66,23 @@ function isReadOnly(tools: string[]): boolean {
 
 /**
  * Cursor bakes effort into the model ID rather than taking it as a separate
- * flag: `claude-sonnet-5-low`, `-medium`, `-high`, `-xhigh`, `-max`. So the
- * room's (AGORA_MODEL, AGORA_EFFORT) pair becomes one hyphenated id.
+ * flag: `claude-sonnet-5-low`, `-medium`, `-high`, `-xhigh`, `-max`.
+ * See `toCursorModelId` — bare Claude ids are rejected by cursor-agent.
  *
- * Verified against `cursor-agent models` on this account — a bare
- * `claude-sonnet-5` is NOT in the list, so dropping the suffix would fail.
- * Bracket overrides ('model[context=1m,...]') and ids that already carry an
- * effort suffix are passed through: the caller was explicit.
+ * When AGORA_CURSOR_MODEL=auto (the default), EVERY turn — including planning —
+ * stays on `auto`. Per-agent Claude/Opus ids burn Pro+ API usage limits;
+ * `auto` stays on the subscription seat.
  */
-const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
-
 function modelArg(model: string, effort: string, phase: string | undefined): string {
-  // Planning is the one phase worth paying for: the plan is written once and
-  // every later turn is measured against it. Everything else takes `auto`
-  // (Composer), which is the whole reason for running here.
+  const fallback = config.cursorModel.trim() || "auto";
+  if (fallback === "auto") return "auto";
+
   if (phase === "planning") {
     const planModel = config.cursorPlanModel.trim();
     if (planModel) return planModel;
   }
 
-  // config.cursorModel wins when set — "auto" by default, which is what makes
-  // the roster's mixed Claude ids irrelevant. Only an empty value falls through
-  // to translating the agent's own model.
-  const pinned = config.cursorModel.trim();
-  if (pinned) return pinned;
-
-  if (model.includes("[")) return model;
-  if (EFFORTS.has(model.split("-").pop() ?? "")) return model;
-  return effort ? `${model}-${effort}` : model;
+  return toCursorModelId(model, effort, fallback);
 }
 
 export class CursorCliDriver implements AgentDriver {
@@ -198,15 +188,13 @@ export class CursorCliDriver implements AgentDriver {
       //  "content":[{"type":"text","text":"hello"}]}}
       // The text is nested in the message, NOT on the event.
       if (kind === "assistant") {
-        // THE ONE THAT DOUBLES EVERY REPLY. Under --stream-partial-output the
-        // CLI emits incremental chunks and THEN repeats the whole message as a
-        // final assistant event. Observed, for "alpha bravo charlie":
-        //   {type:assistant, timestamp_ms:…}  "alpha"
-        //   {type:assistant, timestamp_ms:…}  " bravo charlie"
-        //   {type:assistant}                  "alpha bravo charlie"   <-- no ts
-        // The only thing separating them is that the recap carries NO
-        // timestamp_ms. Accumulating it appends the answer to itself, and the
-        // symptom is a transcript where every agent says everything twice.
+        // TWO ways this stream doubles a reply (observed live with --stream-partial-output):
+        //
+        // 1. End-of-turn recap with NO timestamp_ms that repeats the whole message.
+        // 2. Mid-turn recap WITH timestamp_ms that repeats the sentence just streamed
+        //    word-by-word (e.g. after "Running…sentences." comes another assistant
+        //    event whose text is exactly that sentence again). Skipping only (1)
+        //    left every tool-using turn saying each line twice in the transcript.
         if (evt["timestamp_ms"] === undefined) continue;
 
         const message = evt["message"] as Record<string, unknown> | undefined;
@@ -215,8 +203,18 @@ export class CursorCliDriver implements AgentDriver {
           for (const block of content) {
             const b = block as Record<string, unknown>;
             if (b["type"] === "text" && typeof b["text"] === "string" && b["text"]) {
-              text += b["text"];
-              yield { type: "delta", text: b["text"] };
+              const chunk = b["text"];
+              // Exact mid-turn recap of everything accumulated so far.
+              if (chunk === text) continue;
+              // Cumulative snapshot (rare): replace, only stream the new suffix.
+              if (text && chunk.startsWith(text) && chunk.length > text.length) {
+                const suffix = chunk.slice(text.length);
+                text = chunk;
+                if (suffix) yield { type: "delta", text: suffix };
+                continue;
+              }
+              text += chunk;
+              yield { type: "delta", text: chunk };
             } else if (b["type"] === "tool_use" && typeof b["name"] === "string") {
               yield { type: "tool_use", name: b["name"] };
             }
@@ -247,7 +245,11 @@ export class CursorCliDriver implements AgentDriver {
         // NO COST FIELD. Cursor reports token counts, not dollars, so room
         // rule 4's `Usage:` line has no figure to quote on this driver. Left
         // null rather than invented — a made-up cost is worse than none.
-        if (typeof evt["result"] === "string" && evt["result"] && !text) {
+        // Prefer the result payload over streamed deltas. It is the CLI's own
+        // de-duplicated final text (same idea as the Claude driver's result
+        // replace). Stream accumulation can still carry a mid-turn recap we
+        // missed; this is the backstop that keeps the posted message clean.
+        if (typeof evt["result"] === "string" && evt["result"]) {
           text = evt["result"];
         }
       }

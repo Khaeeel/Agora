@@ -45,44 +45,30 @@ export const config = {
   cursorBin: str("CURSOR_BIN", "/home/dominickooya/.local/bin/cursor-agent"),
 
   /**
-   * Which CLI runs agent turns: "claude" (default) or "cursor".
+   * Which CLI runs agent turns: "cursor" (default), "claude", or "hybrid".
    *
-   * Cursor spends the idle Cursor seat instead of the Claude Max pool that
-   * rule 11 accounts for. It is opt-in because it is strictly weaker in two
-   * ways the drivers document: the system prompt has no privileged channel,
-   * and structured output is extracted rather than schema-validated. Leave the
-   * orchestrator seat on Claude unless a run has been watched end to end.
+   * Cursor is the primary seat — it spends the Cursor subscription instead of
+   * the Claude Max pool that rule 11 accounts for. Claude remains available
+   * via AGORA_DRIVER=claude, or hybrid (Cursor prose + Claude for structured
+   * orchestrator turns). Cursor is weaker on system-prompt privilege and
+   * JSON-schema validation; see drivers/cursor-cli.ts.
    */
-  driver: str("AGORA_DRIVER", "claude"),
+  driver: str("AGORA_DRIVER", "cursor"),
 
   /**
-   * Model for the cursor driver. "auto" lets Cursor route each turn itself and
-   * is the default for a reason: the per-agent `model:` lines in agents/*.md
-   * are Claude Code ids, and they do NOT all exist on the Cursor side.
-   * Verified against `cursor-agent models`: there is no haiku of any version,
-   * so Sarah and Scofield (claude-haiku-4-5) would fail outright if their
-   * frontmatter model were passed through. Effort is also encoded differently
-   * — `claude-sonnet-5-low`, not a separate flag.
-   *
-   * Set this to a specific id (e.g. claude-opus-5-high) to pin every cursor
-   * turn to one model instead. Per-agent model selection is not available on
-   * this driver; that is a real capability loss versus Claude and it is why
-   * the room's cheap roles no longer run cheap.
+   * Default / forced Cursor model. `auto` (default) routes on the Cursor
+   * subscription seat and is applied to EVERY turn when set — agent
+   * frontmatter Claude ids are ignored so they cannot burn Pro+ API limits.
+   * Set to a specific id (e.g. composer-2.5) only if you intend API spend.
    */
   cursorModel: str("AGORA_CURSOR_MODEL", "auto"),
 
   /**
-   * The one phase that does NOT run on `auto`.
-   *
-   * `auto` routes to Cursor's own Composer, which is fast and cheap and fine
-   * for ordinary turns. The plan is different: it is written once, every step
-   * and owner for the rest of the run comes out of it, and Ceb later rules the
-   * phase against criteria frozen there. A weak plan is not a weak turn — it
-   * misdirects every turn after it, and nothing downstream can recover it.
-   *
-   * Set to "" to run planning on `auto` as well.
+   * Planning model when AGORA_CURSOR_MODEL is NOT `auto`.
+   * Ignored while CURSOR_MODEL=auto (planning stays on auto too).
+   * Set to "" to use the ordinary cursor model for planning as well.
    */
-  cursorPlanModel: str("AGORA_CURSOR_PLAN_MODEL", "claude-opus-5-high"),
+  cursorPlanModel: str("AGORA_CURSOR_PLAN_MODEL", "auto"),
 
   model: str("AGORA_MODEL", "claude-sonnet-5"),
   effort: str("AGORA_EFFORT", "low"),

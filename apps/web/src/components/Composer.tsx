@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { Agent } from "../lib/types.ts";
 
 /**
- * Typing is NEVER blocked — only sending is.
+ * Typing and sending are never blocked by a run.
  *
- * The textarea used to be disabled whenever the socket dropped or a run was in
- * progress, which meant a one-second reconnect blip silently swallowed
- * keystrokes and an active run stopped you drafting the next thing at all.
- * Losing what someone typed is a worse failure than letting them queue it.
+ * A busy room used to refuse send with "It'll send when the room is free" and
+ * then drop the message. The server now queues human lines and drains them
+ * when the current turn finishes — same idea as chatting while Claude works.
  */
 export function Composer({
   roomName,
@@ -47,9 +46,7 @@ export function Composer({
     ? "No room selected."
     : !connected
       ? "Reconnecting — your message is kept and will send once it's back."
-      : busy
-        ? "A run is in progress. It'll send when the room is free."
-        : null;
+      : null;
 
   useEffect(() => {
     try {
@@ -112,8 +109,16 @@ export function Composer({
               <span className="flash">{flash}</span>
             ) : blocked && text.trim() ? (
               <span className="blockedhint">{blocked}</span>
+            ) : busy && text.trim() ? (
+              <span className="blockedhint">Room is working — this will queue and run next.</span>
             ) : null}
-            <button className="send" onClick={submit} disabled={!text.trim()} title={blocked ?? "Send"} aria-label="Send">
+            <button
+              className="send"
+              onClick={submit}
+              disabled={!text.trim() || Boolean(blocked)}
+              title={blocked ?? (busy ? "Queue behind the current run" : "Send")}
+              aria-label="Send"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
             </button>
           </div>

@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Agent } from "../lib/types.ts";
 
-const MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
-const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
-
 export interface AgentDraft {
   name: string;
   role: string;
@@ -23,21 +20,23 @@ export interface AgentDraft {
   allow: string[];
 }
 
-const EMPTY: AgentDraft = {
-  name: "",
-  role: "",
-  description: "",
-  instructions: "",
-  personality: "",
-  color: "#7A6A5D",
-  model: "claude-sonnet-5",
-  effort: "low",
-  orchestrator: false,
-  tools: [],
-  addDirs: [],
-  mcp: [],
-  allow: [],
-};
+function emptyDraft(defaults: { model: string; effort: string }): AgentDraft {
+  return {
+    name: "",
+    role: "",
+    description: "",
+    instructions: "",
+    personality: "",
+    color: "#7A6A5D",
+    model: defaults.model,
+    effort: defaults.effort,
+    orchestrator: false,
+    tools: [],
+    addDirs: [],
+    mcp: [],
+    allow: [],
+  };
+}
 
 function fromAgent(a: Agent): AgentDraft {
   return {
@@ -59,19 +58,40 @@ function fromAgent(a: Agent): AgentDraft {
 
 export function AgentEditor({
   agent,
+  models,
+  effortEnabled,
+  defaultModel,
+  defaultEffort,
+  driver,
   onClose,
   onSaved,
 }: {
   /** Present = editing that agent. Absent = creating a new one. */
   agent?: Agent;
+  models: Array<{ id: string; label: string }>;
+  effortEnabled: boolean;
+  defaultModel: string;
+  defaultEffort: string;
+  driver: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const editing = agent !== undefined;
-  const [draft, setDraft] = useState<AgentDraft>(agent ? fromAgent(agent) : EMPTY);
+  const [draft, setDraft] = useState<AgentDraft>(
+    agent ? fromAgent(agent) : emptyDraft({ model: defaultModel, effort: defaultEffort }),
+  );
   const [markdown, setMarkdown] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Keep a file's current model visible even if it is not in this driver's list.
+  const modelOptions =
+    models.some((m) => m.id === draft.model)
+      ? models
+      : [{ id: draft.model, label: `${draft.model} (from file)` }, ...models];
+
+  const driverLabel =
+    driver === "cursor" ? "Cursor" : driver === "hybrid" ? "Cursor (hybrid)" : "Claude";
 
   // Preview comes from the server, so what you see is exactly what gets written.
   useEffect(() => {
@@ -104,10 +124,15 @@ export function AgentEditor({
     setSaving(true);
     setError(null);
     try {
+      // Cursor ids already carry effort; still write a harmless effort line so
+      // round-trips stay valid if the driver flips back to Claude later.
+      const payload = effortEnabled
+        ? draft
+        : { ...draft, effort: "low" };
       const res = await fetch(editing ? `/api/agents/${agent.id}` : "/api/agents", {
         method: editing ? "PUT" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
@@ -226,9 +251,9 @@ export function AgentEditor({
               </div>
 
               <div className="split" style={{ gap: 12 }}>
-                <div className="field">
+                <div className="field" style={{ flex: 1 }}>
                   <label className="field__label" htmlFor="ag-model">
-                    Model
+                    Model ({driverLabel})
                   </label>
                   <select
                     id="ag-model"
@@ -236,30 +261,37 @@ export function AgentEditor({
                     value={draft.model}
                     onChange={(e) => set("model", e.target.value)}
                   >
-                    {MODELS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
+                    {modelOptions.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
                       </option>
                     ))}
                   </select>
+                  {!effortEnabled && (
+                    <span className="field__hint">
+                      Cursor bakes effort into the model id. `auto` lets Cursor pick.
+                    </span>
+                  )}
                 </div>
-                <div className="field">
-                  <label className="field__label" htmlFor="ag-effort">
-                    Effort
-                  </label>
-                  <select
-                    id="ag-effort"
-                    className="select"
-                    value={draft.effort}
-                    onChange={(e) => set("effort", e.target.value)}
-                  >
-                    {EFFORTS.map((e) => (
-                      <option key={e} value={e}>
-                        {e}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {effortEnabled && (
+                  <div className="field">
+                    <label className="field__label" htmlFor="ag-effort">
+                      Effort
+                    </label>
+                    <select
+                      id="ag-effort"
+                      className="select"
+                      value={draft.effort}
+                      onChange={(e) => set("effort", e.target.value)}
+                    >
+                      {["low", "medium", "high", "xhigh", "max"].map((e) => (
+                        <option key={e} value={e}>
+                          {e}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="field">

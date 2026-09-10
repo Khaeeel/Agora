@@ -229,6 +229,14 @@ export function Transcript({ messages, live, agents, onAnswer, busy, dm = false 
                     {director && <span className="directed">← {director.name} asked</span>}
                     {m.directedBy === "human" && !dm && <span className="directed">← direct message</span>}
                     {m.durationMs != null && <span className="took">{fmtDuration(m.durationMs)}</span>}
+                    {!human && m.driver && (
+                      <span
+                        className={`drv drv--${m.driver === "cursor-cli" ? "cursor" : "claude"}`}
+                        title={`Answered via ${m.driver}`}
+                      >
+                        {m.driver === "cursor-cli" ? "Cursor" : "Claude"}
+                      </span>
+                    )}
                   </div>
                 )}
                 {report ? (

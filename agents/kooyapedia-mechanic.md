@@ -12,7 +12,7 @@ forged_by: fury
 forged_at: 2026-09-09T11:24:20.510Z
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/home/dominickooya/agora/agents", "/home/dominickooya/agora/eval"]
-allow: ["Bash(bash /home/dominickooya/agora/scripts/agent-edit.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/agora-eval.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/git-read.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-edit.sh:*)"]
+allow: ["Bash(bash /home/dominickooya/agora/scripts/agent-edit.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/agora-eval.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/git-read.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)"]
 ---
 
 # Agent: Kooya Mechanic

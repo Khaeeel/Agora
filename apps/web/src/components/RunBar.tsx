@@ -79,6 +79,14 @@ export function RunBar({
           {run.phaseDetail ? ` · ${run.phaseDetail}` : ""}
         </span>
       )}
+      {run.driver && (
+        <span
+          className={`runbar__drv runbar__drv--${run.driver === "cursor-cli" ? "cursor" : "claude"}`}
+          title={`Turns are running on ${run.driver}`}
+        >
+          on {run.driver === "cursor-cli" ? "Cursor" : "Claude"}
+        </span>
+      )}
       {speaker && !phase && (
         <span className="runbar__stat">{speaker} is writing…</span>
       )}
