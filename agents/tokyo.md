@@ -13,9 +13,9 @@ add_dirs: ["/mnt/c/Projects/Voicemail_Detection", "/home/dominickooya/Voicemail_
 # means one run: concentrating that in the role that owns the pipeline is what
 # keeps two arms comparable.
 allow: [
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/claude-run.sh:*)",
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/claude-edit.sh:*)",
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/train-launch.sh:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/claude-run.sh:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/claude-edit.sh:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/train-launch.sh:*)",
 ]
 ---
 

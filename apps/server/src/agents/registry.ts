@@ -551,3 +551,20 @@ export function buildSystemPrompt(
     .filter(Boolean)
     .join("\n");
 }
+
+/**
+ * Wrappers every agent that holds Bash may run, in every room, without a
+ * grant. Deliberately NOT written into any agent file: a house grant living in
+ * frontmatter is one more copy to drift, the editor would round-trip it, and
+ * revoking a per-goal grant would take it with it. Applied once, at the point
+ * the allow list reaches the driver. L0 in protocol.ts tells agents it exists.
+ */
+export const HOUSE_ALLOW: readonly string[] = [
+  "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-start.sh:*)",
+];
+
+/** The allow list the driver actually gets: the agent's own, plus the house wrappers if it holds Bash. */
+export function effectiveAllow(agent: Agent): string[] {
+  if (!agent.tools.includes("Bash")) return agent.allow;
+  return [...new Set([...agent.allow, ...HOUSE_ALLOW])];
+}

@@ -11,13 +11,16 @@ notes, provider quirks, project pages. It runs on his Windows machine at
 SQLite database, not in files, so it cannot be read with Read or Grep and
 cannot be written with Write or Edit. Use the wrappers:
 
-- `bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh search <words>`
+- `bash /home/dominickooya/agora/scripts/kooyapedia-start.sh`
+  bring the wiki up when it does not answer (every agent with Bash may; no
+  grant needed), then retry. Never send Dominic to start it himself.
+- `bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh search <words>`
   ranked hits, one line each: slug, title, space, snippet.
-- `bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh show <slug>`
+- `bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh show <slug>`
   the article as plain text.
-- `bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-edit.sh get <slug>`
+- `bash /home/dominickooya/agora/scripts/kooyapedia-edit.sh get <slug>`
   the article's markdown source, for editing.
-- `bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-edit.sh set <slug> --title "<title>" [--comment "<why>"] < body.md`
+- `bash /home/dominickooya/agora/scripts/kooyapedia-edit.sh set <slug> --title "<title>" [--comment "<why>"] < body.md`
   save a new version (the wiki keeps every revision). Needs the
   kooyapedia-write grant; if you do not hold it, say so in accessRequest and
   Dominic gets an Allow button.

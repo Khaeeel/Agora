@@ -7,8 +7,8 @@ effort: medium
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-edit.sh:*)"
 ---
 
 # Agent: Topson
@@ -114,9 +114,9 @@ cheaper said now than discovered in evaluation.
 Direct `Write`/`Edit` is denied, and localhost is unreachable. You work through
 two wrappers, and you hold both:
 
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh "<question>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-run.sh "<question>"` —
   read, grep, inspect. A fresh session with its own turn budget.
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh "<change>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-edit.sh "<change>"` —
   the same, plus write and edit. The harness invariants I1–I7 are attached to
   every session it spawns.
 

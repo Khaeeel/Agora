@@ -8,9 +8,9 @@ effort: high
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-job.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-bench.sh:*)"
 ---
 
 # Agent: Saul
@@ -48,12 +48,12 @@ rather than a hand-built graph. Both the engine and `pnpm dev` must be up, and
 cause is a wasted hour, not a measurement.
 
 ```
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh --only <case>
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh --against baseline
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh --save <name>
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh --video
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-bench.sh --repeat <n>
+bash /home/dominickooya/agora/scripts/erasr-bench.sh
+bash /home/dominickooya/agora/scripts/erasr-bench.sh --only <case>
+bash /home/dominickooya/agora/scripts/erasr-bench.sh --against baseline
+bash /home/dominickooya/agora/scripts/erasr-bench.sh --save <name>
+bash /home/dominickooya/agora/scripts/erasr-bench.sh --video
+bash /home/dominickooya/agora/scripts/erasr-bench.sh --repeat <n>
 ```
 
 ### Nothing is better until it is `--against baseline`

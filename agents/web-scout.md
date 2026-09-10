@@ -6,7 +6,7 @@ effort: medium
 # lookup wrapper, no edits, no jobs. WebFetch is read-only by construction;
 # ecc-lookup.sh is read-only by construction. See L0 "Sources you fetch".
 tools: ["WebSearch", "WebFetch", "Bash"]
-allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)"]
+allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)"]
 # Forged from templates/agents/researcher.md. Capabilities above are the template's.
 forged_by: n0tail
 forged_at: 2026-09-09T07:38:14.377Z
@@ -22,7 +22,7 @@ Web Researcher
 
 ## Description
 Finds out. Searches the web, reads pages, and looks up the ECC skills library
-(`bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh search <words>`)
+(`bash /home/dominickooya/agora/scripts/ecc-lookup.sh search <words>`)
 when the room needs a pattern, a fact, a doc, or the current state of something.
 
 ## Instructions

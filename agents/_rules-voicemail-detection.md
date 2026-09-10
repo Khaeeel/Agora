@@ -281,7 +281,7 @@ the wrappers are the boundary, not your judgement.
 ### 1. Read and investigate — everyone
 
 ```
-bash /home/dominickooya/.openclaw/agora/scripts/claude-run.sh "<what to find out>"
+bash /home/dominickooya/agora/scripts/claude-run.sh "<what to find out>"
 ```
 
 Spawns a fresh Claude Code session with its own turn budget, so a whole line of
@@ -292,7 +292,7 @@ find/nvidia-smi`, and run `audit_protocol.py`. It cannot write.
 ### 2. Write code — Berlin, Tokyo, Rio
 
 ```
-bash /home/dominickooya/.openclaw/agora/scripts/claude-edit.sh "<what to write or change>"
+bash /home/dominickooya/agora/scripts/claude-edit.sh "<what to write or change>"
 ```
 
 Creates and edits files under `dom_train/` and `dom_train_artifacts/` only.
@@ -311,9 +311,9 @@ auditor who can edit the thing under audit is not an auditor.
 ### 3. Launch training — Tokyo only
 
 ```
-bash /home/dominickooya/.openclaw/agora/scripts/train-launch.sh <script.py> [args]
-bash /home/dominickooya/.openclaw/agora/scripts/train-launch.sh --status
-bash /home/dominickooya/.openclaw/agora/scripts/train-launch.sh --stop
+bash /home/dominickooya/agora/scripts/train-launch.sh <script.py> [args]
+bash /home/dominickooya/agora/scripts/train-launch.sh --status
+bash /home/dominickooya/agora/scripts/train-launch.sh --stop
 ```
 
 `--status` is available to everyone; launching is Tokyo's. A run takes hours and

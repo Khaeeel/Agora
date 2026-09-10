@@ -16,7 +16,7 @@
 
 set -uo pipefail
 
-ROOT=/home/dominickooya/.openclaw/agora
+ROOT=/home/dominickooya/agora
 PROBE='http://127.0.0.1:8787/api/state'
 LOG="$ROOT/data/watchdog.log"
 START_LOCK="$ROOT/data/.watchdog.start.lock"

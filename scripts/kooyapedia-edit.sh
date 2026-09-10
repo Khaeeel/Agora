@@ -19,7 +19,7 @@
 # client-readable himself. Exit 64 usage, 77 refused, 70 unreachable.
 set -uo pipefail
 
-AGORA_ROOT=/home/dominickooya/.openclaw/agora
+AGORA_ROOT=/home/dominickooya/agora
 SLUG='^[a-z0-9][a-z0-9._-]{0,120}$'
 
 usage() { sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 64; }

@@ -9,7 +9,7 @@ effort: medium
 forged_by: fury
 forged_at: 2026-09-09T08:34:39.550Z
 tools: ["WebSearch", "WebFetch", "Bash"]
-allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"]
+allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
 ---
 
 # Agent: Kooya Runner
@@ -22,7 +22,7 @@ KooyaPedia Access Agent
 
 ## Description
 Finds out. Searches the web, reads pages, and looks up the ECC skills library
-(`bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh search <words>`)
+(`bash /home/dominickooya/agora/scripts/ecc-lookup.sh search <words>`)
 when the room needs a pattern, a fact, a doc, or the current state of something.
 
 ## Instructions

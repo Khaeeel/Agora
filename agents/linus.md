@@ -8,9 +8,9 @@ effort: high
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-edit.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-job.sh:*)"
 ---
 
 # Agent: Linus

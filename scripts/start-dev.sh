@@ -1,11 +1,11 @@
 #!/bin/bash
 # Start both dev servers.
-#   bash ~/.openclaw/agora/scripts/start-dev.sh
+#   bash ~/agora/scripts/start-dev.sh
 #
 # Caveat: launched from a one-shot `wsl.exe -- bash ...`, these get reaped when
 # that session exits. For servers that outlive the shell, run `pnpm dev` from a
 # terminal you keep open.
-ROOT="$HOME/.openclaw/agora"
+ROOT="$HOME/agora"
 cd "$ROOT" || exit 1
 
 # Kill by port — pkill on the path is unreliable, the server runs with a

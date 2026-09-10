@@ -25,7 +25,7 @@
 # The TS tool re-checks all of that byte for byte before it writes.
 set -uo pipefail
 
-AGORA_ROOT=/home/dominickooya/.openclaw/agora   # pinned on purpose, never from env
+AGORA_ROOT=/home/dominickooya/agora   # pinned on purpose, never from env
 SLUG='^[a-z0-9][a-z0-9-]{0,40}$'
 
 usage() { sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 64; }

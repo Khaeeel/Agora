@@ -7,8 +7,8 @@ effort: medium
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-edit.sh:*)"
 ---
 
 # Agent: Rusty
@@ -94,9 +94,9 @@ Not checked: <what you did not look at>
 Direct `Write`/`Edit` is denied and localhost is unreachable from here. Two
 wrappers, and you hold both:
 
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh "<question>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-run.sh "<question>"` —
   read, grep, inspect, in a fresh session with its own turn budget.
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh "<change>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-edit.sh "<change>"` —
   the same, plus write and edit.
 
 Neither submits a job or restarts the dev server. When the work ends in "now

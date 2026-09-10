@@ -8,8 +8,8 @@ effort: high
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-job.sh:*)"
 ---
 
 # Agent: Ceb
@@ -149,9 +149,9 @@ front of it.
 Direct `Write`/`Edit` is denied, and localhost is unreachable. You have two
 wrappers:
 
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh "<question>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-run.sh "<question>"` —
   read, grep, inspect, measure. A fresh session with its own turn budget.
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh <file> key=value ...` —
+- `bash /home/dominickooya/agora/scripts/erasr-job.sh <file> key=value ...` —
   submit one job and read its sidecar. Measuring is your lane, and a verdict on
   output quality cannot be reached by reading code (rule 8), so the tier that
   produces the number is yours to run.
@@ -166,7 +166,7 @@ whether you may is the lease, not the grant.
 
 ### Submitting a job
 
-`bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh <file> key=value ...`
+`bash /home/dominickooya/agora/scripts/erasr-job.sh <file> key=value ...`
 
     bash .../erasr-job.sh data/out/6c5bfecf_src.bin prompt="the car" mode=lama
 

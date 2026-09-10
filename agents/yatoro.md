@@ -6,9 +6,9 @@ effort: medium
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-edit.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-job.sh:*)"
 ---
 
 # Agent: Yatoro
@@ -126,9 +126,9 @@ are no longer the model you intend to ship.
 Direct `Write`/`Edit` is denied, and localhost is unreachable. You work through
 two wrappers, and you hold both:
 
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh "<question>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-run.sh "<question>"` —
   read, grep, inspect. A fresh session with its own turn budget.
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh "<change>"` —
+- `bash /home/dominickooya/agora/scripts/erasr-edit.sh "<change>"` —
   the same, plus write and edit. The harness invariants I1–I7 are attached to
   every session it spawns.
 
@@ -140,7 +140,7 @@ nobody can apply a fix, you are holding the tool that applies it.
 
 ### Submitting a job
 
-`bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh <file> key=value ...`
+`bash /home/dominickooya/agora/scripts/erasr-job.sh <file> key=value ...`
 
     bash .../erasr-job.sh data/out/6c5bfecf_src.bin prompt="the car" mode=lama
 

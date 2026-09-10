@@ -33,6 +33,7 @@ import {
   revokeAccess,
   slugify,
   writeRoomRules,
+  effectiveAllow,
 } from "./agents/registry.ts";
 
 /**
@@ -48,7 +49,7 @@ const ACCESS_ROOTS = ["/mnt/c/Projects", "/mnt/c/Users/domin", "/home/dominickoo
 
 const KOOYAPEDIA_GRANT = {
   tools: ["Bash"],
-  allow: ["Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"],
+  allow: ["Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"],
 };
 
 type AccessKind = "dir" | "dir-write" | "kooyapedia" | "kooyapedia-write";
@@ -110,8 +111,8 @@ const BLANKET =
 const KOOYAPEDIA_WRITE_GRANT = {
   tools: ["Bash"],
   allow: [
-    "Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)",
-    "Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-edit.sh:*)",
+    "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)",
+    "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-edit.sh:*)",
   ],
 };
 
@@ -1725,7 +1726,7 @@ export class Orchestrator {
         tools: opts.chatTurn ? [] : opts.agent.tools,
         addDirs: opts.chatTurn ? [] : opts.agent.addDirs,
         mcp: opts.chatTurn ? [] : opts.agent.mcp,
-        allow: opts.chatTurn ? [] : opts.agent.allow,
+        allow: opts.chatTurn ? [] : effectiveAllow(opts.agent),
         mcpConfigs: opts.agent.mcpConfigs,
         ...(opts.schema ? { schema: opts.schema } : {}),
         phase: opts.busyPhase,

@@ -42,7 +42,7 @@ assignment line. It is his to give, every run, without asking.
 The room can submit jobs itself:
 
 ```
-bash /home/dominickooya/.openclaw/agora/scripts/erasr-job.sh <file> key=value ...
+bash /home/dominickooya/agora/scripts/erasr-job.sh <file> key=value ...
 ```
 
 Held by Collapse, Yatoro, Ana and Ceb. It submits one job, waits, and prints the

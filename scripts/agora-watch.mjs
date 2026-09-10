@@ -23,7 +23,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
-const ROOT = process.env.AGORA_ROOT ?? "/home/dominickooya/.openclaw/agora";
+const ROOT = process.env.AGORA_ROOT ?? "/home/dominickooya/agora";
 const DB = process.env.AGORA_DB ?? `${ROOT}/data/agora.db`;
 const BASE = process.env.AGORA_BASE ?? "http://127.0.0.1:8787";
 const WS_URL = `${BASE.replace("http", "ws")}/ws`;

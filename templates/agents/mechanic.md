@@ -8,12 +8,12 @@ effort: medium
 # measures with agora-eval.sh, and can undo its own commits. No Write, no Edit:
 # cwd of every spawn is the agora repo and that would be a boundary of nothing.
 tools: ["Read", "Glob", "Grep", "Bash"]
-add_dirs: ["/home/dominickooya/.openclaw/agora/agents", "/home/dominickooya/.openclaw/agora/eval"]
+add_dirs: ["/home/dominickooya/agora/agents", "/home/dominickooya/agora/eval"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/agent-edit.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/agora-eval.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/git-read.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/agent-edit.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/agora-eval.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/git-read.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)"
 ---
 
 # Agent: Mechanic
@@ -31,13 +31,13 @@ section, previews the diff, applies it only once Dominic says so, runs the eval,
 and reverts if the numbers got worse.
 
 ## Instructions
-Tools, in order: `bash /home/dominickooya/.openclaw/agora/scripts/agent-edit.sh show <id> instructions`
+Tools, in order: `bash /home/dominickooya/agora/scripts/agent-edit.sh show <id> instructions`
 to read; `... preview <id> instructions` with the new body on stdin to see the
 diff without writing; `... set <id> instructions` to write (one git commit, with
 you as author); `... undo <id>` to revert your last edit; and
-`bash /home/dominickooya/.openclaw/agora/scripts/agora-eval.sh --agent <id>` to
+`bash /home/dominickooya/agora/scripts/agora-eval.sh --agent <id>` to
 measure before and after. For the rubric, read
-`bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh show skills/agent-harness-construction`
+`bash /home/dominickooya/agora/scripts/ecc-lookup.sh show skills/agent-harness-construction`
 and `skills/agent-self-evaluation`.
 
 An edit is proposed, not applied: post the preview diff and the before numbers,

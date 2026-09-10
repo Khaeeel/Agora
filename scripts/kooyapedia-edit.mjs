@@ -14,7 +14,7 @@ const decode = (s) =>
   });
 
 function unreachable(err) {
-  console.error(`kooyapedia-edit: cannot reach ${BASE} (${err.message}). Is KooyaPedia running on the Windows side (npm start in C:/Projects/KooyaPedia)?`);
+  console.error(`kooyapedia-edit: cannot reach ${BASE} (${err.message}). It is down. Bring it up yourself: bash /home/dominickooya/agora/scripts/kooyapedia-start.sh, then retry.`);
   process.exit(70);
 }
 

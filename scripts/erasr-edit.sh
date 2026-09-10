@@ -58,7 +58,7 @@ GUARD
 
 # Run FROM the project. The spawned session inherits this directory as its
 # implicit write scope — grants Write/Edit, so this one is load-bearing. Left at the caller's
-# cwd that scope is ~/.openclaw/agora, which is where these wrappers live,
+# cwd that scope is ~/agora, which is where these wrappers live,
 # and an agent that can rewrite its own wrapper has no boundary at all.
 cd "$PROJECT" || { echo "$0: cannot enter $PROJECT" >&2; exit 70; }
 

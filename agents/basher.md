@@ -8,8 +8,8 @@ effort: high
 tools: ["Read", "Glob", "Grep", "Bash"]
 add_dirs: ["/mnt/c/Projects/erasr"]
 allow:
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh:*)"
-  - "Bash(bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-run.sh:*)"
+  - "Bash(bash /home/dominickooya/agora/scripts/erasr-edit.sh:*)"
 ---
 
 # Agent: Basher
@@ -101,8 +101,8 @@ Not checked: <>
 
 ### Your execution path
 
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-run.sh "<question>"`
-- `bash /home/dominickooya/.openclaw/agora/scripts/erasr-edit.sh "<change>"`
+- `bash /home/dominickooya/agora/scripts/erasr-run.sh "<question>"`
+- `bash /home/dominickooya/agora/scripts/erasr-edit.sh "<change>"`
 
 **You are not blocked on write access.** If you catch yourself reporting that
 nobody can rewire a graph, you are holding the tool that rewires it.

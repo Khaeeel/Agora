@@ -1,8 +1,8 @@
 #!/bin/bash
 # The browser T-Bag drives.
 #
-#   bash ~/.openclaw/agora/scripts/start-chrome.sh            # visible window
-#   bash ~/.openclaw/agora/scripts/start-chrome.sh --headless # no window
+#   bash ~/agora/scripts/start-chrome.sh            # visible window
+#   bash ~/agora/scripts/start-chrome.sh --headless # no window
 #
 # The chrome-devtools MCP server ATTACHES to an existing Chrome over CDP — it
 # never launches one. Without this running, T-Bag's browser tools exist but every
@@ -14,7 +14,7 @@
 # Run this from a terminal you keep open. Launched from a one-shot
 # `wsl.exe -- bash ...` it gets reaped the moment that call returns.
 PORT="${AGORA_CDP_PORT:-9222}"
-PROFILE="$HOME/.openclaw/agora/.chrome-profile"
+PROFILE="$HOME/agora/.chrome-profile"
 BIN=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux64/chrome 2>/dev/null | head -1)
 
 if [ -z "$BIN" ]; then

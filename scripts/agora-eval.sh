@@ -16,7 +16,7 @@
 # WHAT IT MAY NOT: touch any other room, edit any agent, or send anything.
 set -uo pipefail
 
-AGORA_ROOT=/home/dominickooya/.openclaw/agora
+AGORA_ROOT=/home/dominickooya/agora
 SLUG='^[a-z0-9][a-z0-9-]{0,40}$'
 
 usage() { sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 64; }

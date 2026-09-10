@@ -12,9 +12,9 @@ add_dirs: ["/mnt/c/Projects/Voicemail_Detection", "/home/dominickooya/Voicemail_
 # Rio writes configs — pre-registration IS the experiment design, so the
 # person designing it is the right person to write it. No training launch.
 allow: [
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/claude-run.sh:*)",
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/claude-edit.sh:*)",
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/train-launch.sh --status:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/claude-run.sh:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/claude-edit.sh:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/train-launch.sh --status:*)",
 ]
 ---
 

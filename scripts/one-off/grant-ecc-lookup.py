@@ -9,7 +9,7 @@ Idempotent — an agent that already has the grant is skipped.
 import re
 import pathlib
 
-GRANT = '"Bash(bash /home/dominickooya/.openclaw/agora/scripts/ecc-lookup.sh:*)"'
+GRANT = '"Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)"'
 AGENTS = "berlin denver rio tokyo ana collapse yatoro linus basher livingston rusty topson ceb saul".split()
 ROOT = pathlib.Path(__file__).resolve().parents[2] / "agents"
 

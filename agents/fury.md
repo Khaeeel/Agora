@@ -3,7 +3,7 @@ color: "#ff0033"
 model: claude-sonnet-5
 effort: low
 tools: ["Bash"]
-allow: ["Bash(bash /home/dominickooya/.openclaw/agora/scripts/kooyapedia-lookup.sh:*)"]
+allow: ["Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
 ---
 
 # Agent: Fury

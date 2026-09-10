@@ -14,8 +14,8 @@ add_dirs: ["/mnt/c/Projects/Voicemail_Detection", "/home/dominickooya/Voicemail_
 # can edit the thing under audit is not an auditor. --status only, so he can
 # see a run without being able to start or change one.
 allow: [
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/claude-run.sh:*)",
-  "Bash(bash /home/dominickooya/.openclaw/agora/scripts/train-launch.sh --status:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/claude-run.sh:*)",
+  "Bash(bash /home/dominickooya/agora/scripts/train-launch.sh --status:*)",
 ]
 ---
 
