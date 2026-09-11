@@ -11,7 +11,7 @@ effort: medium
 forged_by: fury
 forged_at: 2026-09-09T11:11:30.985Z
 tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]
-add_dirs: ["/home/dominickooya/agora/agents", "/home/dominickooya/agora/eval", "/mnt/c/Projects/KooyaPedia", "/mnt/c/Projects/SHALEVET_DASHBOARD"]
+add_dirs: ["/home/dominickooya/agora/agents", "/home/dominickooya/agora/eval", "/mnt/c/Projects/KooyaPedia", "/mnt/c/Projects/SHALEVET_DASHBOARD", "/mnt/c/Projects/Shalevet_Whatsapp_Bot"]
 allow: ["Bash(bash /home/dominickooya/agora/scripts/agent-edit.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/agora-eval.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/git-read.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)"]
 ---
 
