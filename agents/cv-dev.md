@@ -5,10 +5,11 @@ effort: low
 # Chat-only. A helper reasons from the transcript and says what it thinks; it
 # cannot read files, run anything or reach the network. Capability is granted
 # by Dominic editing a template, never by the orchestrator that forged this.
-tools: []
 # Forged from templates/agents/helper.md. Capabilities above are the template's.
 forged_by: icarus
 forged_at: 2026-09-11T07:33:59.540Z
+tools: ["Read", "Glob", "Grep", "Write", "Edit"]
+add_dirs: ["/mnt/c/Projects/hand-gesture-controller"]
 ---
 
 # Agent: CV Dev
