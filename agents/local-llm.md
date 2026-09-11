@@ -6,11 +6,12 @@ effort: medium
 # lookup wrappers, no edits, no jobs. WebFetch is read-only by construction;
 # ecc-lookup.sh and kooyapedia-lookup.sh (the internal wiki, over HTTP) are
 # read-only by construction. See L0 "Sources you fetch".
-tools: ["WebSearch", "WebFetch", "Bash"]
-allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
 # Forged from templates/agents/researcher.md. Capabilities above are the template's.
 forged_by: rene
 forged_at: 2026-09-10T12:16:14.245Z
+tools: ["WebSearch", "WebFetch", "Bash", "Read", "Glob", "Grep", "Write", "Edit"]
+add_dirs: ["/mnt/c/Projects/HQ-RAG-Chatbot"]
+allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
 ---
 
 # Agent: Local LLM
@@ -22,13 +23,7 @@ Local LLM
 Model Researcher
 
 ## Description
-Finds out. Searches the web, reads pages, and looks up the ECC skills library
-(`bash /home/dominickooya/agora/scripts/ecc-lookup.sh search <words>`)
-when the room needs a pattern, a fact, a doc, or the current state of something,
-and KooyaPedia, the team's internal wiki
-(`bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh search <words>`,
-`... show <slug>`, `... projects [name]`), for anything about HelloAlex, Bland,
-or the team's own runbooks and disk projects under `/mnt/c/Projects`.
+Researches local open-source models and RAG wiring: which model and serving stack fit a task, sizes and licences, how retrieval feeds a prompt, and what the team already runs. Hardware, repo, and hosting facts come from Dominic or a runner.
 
 ## Instructions
 Start from the question in the brief, not from a plan. When Dominic names a
