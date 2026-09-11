@@ -6,23 +6,32 @@
  */
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
-:root{
-  --bg:#0a0c14; --rail:#0d1019; --surface:#12151f; --raised:#191d2b;
-  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
-  --text:#e8eaf3; --dim:#8a90a8; --faint:#5a6076;
-  --accent:#8b6cff; --soft:rgba(139,108,255,.14);
-  --live:#3ddc97; --warn:#e8b44a; --stop:#f2766a;
+:root,
+:root[data-theme="dark"]{
+  --bg:#12090b; --rail:#0e0809; --surface:#1a1012; --raised:#241618;
+  --line:rgba(255,243,236,.08); --line2:rgba(255,243,236,.14);
+  --text:#f3e8e4; --dim:#b9a29c; --faint:#7a6560;
+  --accent:#c45c6a; --soft:rgba(196,92,106,.16);
+  --live:#9cba8a; --warn:#d4a85a; --stop:#e8909a;
   --ui:"Space Grotesk",system-ui,sans-serif;
   --body:"Inter",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+/* Maroon & Cream — exact from agora-palette.html [data-pal="maroon"]. */
+:root[data-theme="light"]{
+  --bg:#f7f2ea; --rail:#efe7da; --surface:#fffdf8; --raised:#efe7da;
+  --line:#e2d7c6; --line2:rgba(42,26,28,.14);
+  --text:#2a1a1c; --dim:#7a6366; --faint:#b09a9d;
+  --accent:#7a2434; --soft:#f0d8dc;
+  --live:#4f7d3d; --warn:#b98618; --stop:#9a3a4c;
 }
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 ::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.09);border-radius:9px;border:2px solid transparent;background-clip:content-box}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2);background-clip:content-box}
+::-webkit-scrollbar-thumb{background:var(--wash-strong,rgba(255,255,255,.09));border-radius:9px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:content-box;opacity:.5}
 .shell{display:grid;grid-template-columns:262px minmax(0,1fr) 296px;height:100vh;overflow:hidden;background:var(--bg)}
 .main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
 .av{border-radius:50%;display:inline-grid;place-items:center;font-family:var(--ui);font-weight:700;color:#0a0c14;flex:none}
@@ -75,6 +84,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .agent-item:hover{background:rgba(255,255,255,.035)}
 .agent-item .av{width:26px;height:26px;font-size:10px}
 .controller{border-top:1px solid var(--line);padding:11px 14px;display:flex;align-items:center;gap:10px;margin-top:auto}
+.themebtn{margin-left:auto;flex:none;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--dim);border:1px solid var(--line);background:var(--raised)}
+.themebtn:hover{color:var(--accent);border-color:var(--accent)}
 .bolt{width:29px;height:29px;border-radius:9px;background:rgba(255,163,58,.13);display:grid;place-items:center;flex:none}
 .bolt svg{width:14px;height:14px;color:#ffab3f}
 .controller b{display:block;font-family:var(--ui);font-size:11.5px;font-weight:600}
@@ -229,3 +240,38 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
    pool was spent (or Cursor was chosen), and the turn ran on the other seat. */
 .drv{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:999px;border:1px solid var(--hairline);color:var(--text-3)}
 .drv--cursor{color:var(--cyan);border-color:rgba(var(--cyan-rgb),.45);background:rgba(var(--cyan-rgb),.10)}
+
+/* Light-mode fixes for literals that only work on the dark chat skin. */
+:root[data-theme="light"] .cnav button.on{color:var(--text)}
+:root[data-theme="light"] .cnav button.on .ico,
+:root[data-theme="light"] .room-item.on .hash,
+:root[data-theme="light"] .newbtn{color:var(--accent)}
+:root[data-theme="light"] .headbtn:hover,
+:root[data-theme="light"] .copybtn:hover,
+:root[data-theme="light"] .askopt.picked,
+:root[data-theme="light"] .amsg:hover{color:var(--text)}
+:root[data-theme="light"] .log .dur,
+:root[data-theme="light"] .log.fold .t,
+:root[data-theme="light"] .took,
+:root[data-theme="light"] .chint{color:var(--faint)}
+:root[data-theme="light"] .log.blocked .t,
+:root[data-theme="light"] .log.ask .t,
+:root[data-theme="light"] .say{color:var(--text)}
+:root[data-theme="light"] .say.human{color:var(--text)}
+:root[data-theme="light"] .prompt pre,
+:root[data-theme="light"] .rep-b{color:var(--dim)}
+:root[data-theme="light"] .livebubble{color:var(--dim)}
+:root[data-theme="light"] .needs{color:var(--warn)}
+:root[data-theme="light"] .say code,
+:root[data-theme="light"] .rep-b code{background:var(--soft);color:var(--accent)}
+:root[data-theme="light"] .sdot.off{background:var(--line2)}
+:root[data-theme="light"] .newroom:hover,
+:root[data-theme="light"] .send:hover{background:var(--accent-hover,#922c40)}
+:root[data-theme="light"] .agent-item:hover{background:rgba(42,26,28,.04)}
+:root[data-theme="light"] .bolt{background:#f6e8c2}
+:root[data-theme="light"] .bolt svg{color:var(--warn)}
+:root[data-theme="light"] .mark{background:var(--hero,#2a1a1c);box-shadow:0 4px 14px rgba(122,36,52,.28)}
+:root[data-theme="light"] .mark svg{fill:#f7f2ea}
+:root[data-theme="light"] .cnav button.on{background:var(--soft);color:var(--accent)}
+:root[data-theme="light"] .btn.primary,
+:root[data-theme="light"] .headbtn.primary{background:#2a1a1c;color:#f7f2ea;border-color:#2a1a1c}

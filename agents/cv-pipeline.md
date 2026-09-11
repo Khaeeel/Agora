@@ -1,14 +1,8 @@
 ---
-color: "#7A6A5D"
-model: claude-sonnet-5
+color: "#a600ff"
+model: auto
 effort: low
-# Chat-only. A helper reasons from the transcript and says what it thinks; it
-# cannot read files, run anything or reach the network. Capability is granted
-# by Dominic editing a template, never by the orchestrator that forged this.
 tools: []
-# Forged from templates/agents/helper.md. Capabilities above are the template's.
-forged_by: icarus
-forged_at: 2026-09-11T06:57:38.665Z
 ---
 
 # Agent: CV Pipeline

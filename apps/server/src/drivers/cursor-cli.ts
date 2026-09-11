@@ -139,7 +139,10 @@ export class CursorCliDriver implements AgentDriver {
 
   async *run(req: DriverRequest): AsyncIterable<DriverEvent> {
     const child = spawn(config.cursorBin, this.buildArgs(req), {
-      cwd: config.root,
+      // Same rule as the Claude driver: an agent that may write runs inside the
+      // folder it was granted. Pinning config.root here meant a scaffold with
+      // relative paths landed in the agora repo, not the project.
+      cwd: req.cwd ?? config.root,
       stdio: ["pipe", "pipe", "pipe"],
       signal: req.signal,
     });

@@ -23,7 +23,7 @@ import {
   setRoomMembers,
   updateStep,
 } from "./db.ts";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import {
   SLUG,
   buildSystemPrompt,
@@ -52,7 +52,40 @@ const KOOYAPEDIA_GRANT = {
   allow: ["Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"],
 };
 
-type AccessKind = "dir" | "dir-write" | "kooyapedia" | "kooyapedia-write";
+type AccessKind = "dir" | "dir-write" | "kooyapedia" | "kooyapedia-write" | "wrapper";
+
+/**
+ * Scripts an agent may ASK for by name. Dominic wrote each one, and each is
+ * its own boundary; listing it here only makes it askable. Nothing is granted
+ * until he taps Allow on the button the room shows him. This is how "if the
+ * room can do it, it asks permission" works without ever handing an agent a
+ * broad shell: the ask is always for one script, never for Bash.
+ *
+ * `match` lets a prose blocker ("needs broader Bash to install into
+ * HelloAlex-Local-Model") become the right button even when the orchestrator
+ * did not fill accessRequest itself.
+ */
+const EXEC_WORDS = String.raw`\b(install|i-?install|download|i-?download|shell|bash|docker|pull|verify|i-?verify|snapshot|run|patakbuhin)\b`;
+const ASKABLE_WRAPPERS: Record<string, { script: string; label: string; match: RegExp }> = {
+  "hq-model": {
+    script: "/home/dominickooya/agora/scripts/hq-model.sh",
+    label: "hq-model.sh (status, verify at download ng HQ chatbot model)",
+    // The subject (the stack, "local model", the model, the server) near an
+    // execution word, in either order. A bare subject with no execution word
+    // stays a read request — "tignan mo ang HelloAlex-Local-Model" is a folder.
+    match: (() => {
+      const subject = String.raw`(HelloAlex-Local-Model|local[- ]model|qwen3?|vllm)`;
+      return new RegExp(
+        String.raw`\bhq-model\b|` + subject + String.raw`[\s\S]{0,200}` + EXEC_WORDS + `|` + EXEC_WORDS + String.raw`[\s\S]{0,200}` + subject,
+        "i",
+      );
+    })(),
+  },
+};
+
+function askableList(): string {
+  return Object.entries(ASKABLE_WRAPPERS).map(([name, w]) => `${name} = ${w.label}`).join("; ") || "(none)";
+}
 
 const WRITE_WORDS =
   /\b(write|edit|isulat|i-?edit|baguhin|i-?update|update|create|gumawa|i-?save|publish|i-?apply|magsulat|sulat|rewrite|i-?rewrite)\b/i;
@@ -63,8 +96,14 @@ const WRITE_WORDS =
  * KooyaPedia by name, or the first folder-shaped token; a write word on the
  * same message asks for the write flavour. Null when nothing was named.
  */
-function inferAccess(text: string): { kind: AccessKind; path: string | null } | null {
+export function inferAccess(text: string): { kind: AccessKind; path: string | null } | null {
   const write = WRITE_WORDS.test(text);
+  // A named, askable script beats a folder: "needs broader Bash to install into
+  // HelloAlex-Local-Model" asks to RUN something there, and read access to the
+  // folder would not unblock it.
+  for (const [name, w] of Object.entries(ASKABLE_WRAPPERS)) {
+    if (w.match.test(text)) return { kind: "wrapper", path: name };
+  }
   if (/kooyapedia/i.test(text)) return { kind: write ? "kooyapedia-write" : "kooyapedia", path: null };
   const m = text.match(/(?:[A-Za-z]:[\\/]|\/mnt\/[a-z]\/|\/home\/)[^\s"'`,;]+/);
   if (m) return { kind: write ? "dir-write" : "dir", path: m[0].replace(/[.)\]]+$/, "") };
@@ -91,6 +130,10 @@ function grantsLine(a: Agent): string {
 
 /** Does this agent already hold what an access ask would grant? */
 function accessHeld(a: Agent, kind: AccessKind, label: string): boolean {
+  if (kind === "wrapper") {
+    const w = Object.values(ASKABLE_WRAPPERS).find((x) => x.label === label);
+    return w !== undefined && a.allow.some((x) => x.includes(w.script));
+  }
   if (kind === "kooyapedia") return a.allow.some((x) => x.includes("kooyapedia-lookup.sh"));
   if (kind === "kooyapedia-write") return a.allow.some((x) => x.includes("kooyapedia-edit.sh"));
   const dir = label.replace(/ \(write\)$/, "");
@@ -117,15 +160,54 @@ const KOOYAPEDIA_WRITE_GRANT = {
 };
 
 /** Turn a kind + path into the concrete grant, or say why not. Shared by every access path. */
-function resolveGrant(
+export function resolveGrant(
   kind: AccessKind,
   path: string | null,
-): { grant: { tools?: string[]; dirs?: string[]; allow?: string[] }; label: string } | { error: string } {
+):
+  | { grant: { tools?: string[]; dirs?: string[]; allow?: string[] }; label: string; create?: string }
+  | { error: string } {
+  if (kind === "wrapper") {
+    const name = (path ?? "").trim().toLowerCase();
+    const w = ASKABLE_WRAPPERS[name];
+    if (!w) return { error: `"${path}" is not a script the room may ask for. Askable: ${Object.keys(ASKABLE_WRAPPERS).join(", ") || "(none)"}.` };
+    if (!existsSync(w.script)) return { error: `${w.script} is missing.` };
+    return { grant: { tools: ["Bash"], allow: [`Bash(bash ${w.script}:*)`] }, label: w.label };
+  }
   if (kind === "kooyapedia") return { grant: KOOYAPEDIA_GRANT, label: "KooyaPedia" };
   if (kind === "kooyapedia-write") return { grant: KOOYAPEDIA_WRITE_GRANT, label: "KooyaPedia (write)" };
-  const wanted = toWslPath(path ?? "");
+  const wanted = toWslPath(path ?? "").replace(/\/+$/, "");
   if (!wanted.startsWith("/")) return { error: `"${path}" is not an absolute folder path.` };
-  if (!existsSync(wanted)) return { error: `"${wanted}" does not exist as seen from WSL.` };
+  if (!existsSync(wanted)) {
+    // A write request for a folder that does not exist yet is how a new
+    // project starts ("scaffold it in C:\Projects\X"). Refusing it left the
+    // room unable to ask at all: it needed write access to make the folder,
+    // and the folder to get write access. So a NEW folder inside an existing
+    // access root may be asked for. It is created only when Dominic taps
+    // Allow (applyAccess), never at ask time.
+    if (kind !== "dir-write") return { error: `"${wanted}" does not exist as seen from WSL.` };
+    const cut = wanted.lastIndexOf("/");
+    const parent = wanted.slice(0, cut) || "/";
+    const name = wanted.slice(cut + 1);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/.test(name)) return { error: `"${name}" is not a plain folder name.` };
+    let parentReal: string;
+    try {
+      parentReal = realpathSync(parent);
+    } catch {
+      return { error: `"${parent}" does not exist, so "${name}" cannot be created in it.` };
+    }
+    if (parentReal === config.root || parentReal.startsWith(config.root + "/")) {
+      return { error: "the agora repo itself is never opened to a room — it holds the .env." };
+    }
+    if (!ACCESS_ROOTS.some((r) => parentReal === r || parentReal.startsWith(r + "/"))) {
+      return { error: `"${parentReal}" is outside the folders a room may be given (${ACCESS_ROOTS.join(", ")}).` };
+    }
+    const real = `${parentReal}/${name}`;
+    return {
+      grant: { tools: ["Read", "Glob", "Grep", "Write", "Edit"], dirs: [real] },
+      label: `${real} (write, new folder)`,
+      create: real,
+    };
+  }
   let real: string;
   try {
     real = realpathSync(wanted);
@@ -228,7 +310,8 @@ const PLAN_SCHEMA = {
         role: { type: "string", description: "Two or three words, e.g. Docs Researcher." },
         brief: {
           type: "string",
-          description: "What this agent is for, in two or three sentences. Appended to its instructions.",
+          description:
+            "Two or three sentences. The FIRST sentence is the agent's lane, stated as what it does for the room ('Finds out what…', 'Reviews…', 'Builds…'), because it becomes the agent's own description of its skills. Then what it should work on now. Do not list tools or wrappers: the harness tells the agent what it can and cannot do from the template's grants.",
         },
       },
       required: ["template", "id", "name", "role", "brief"],
@@ -435,7 +518,8 @@ const DECISION_SCHEMA = {
         role: { type: "string", description: "Two or three words, e.g. Docs Researcher." },
         brief: {
           type: "string",
-          description: "What this agent is for, in two or three sentences. Appended to its instructions.",
+          description:
+            "Two or three sentences. The FIRST sentence is the agent's lane, stated as what it does for the room ('Finds out what…', 'Reviews…', 'Builds…'), because it becomes the agent's own description of its skills. Then what it should work on now. Do not list tools or wrappers: the harness tells the agent what it can and cannot do from the template's grants.",
         },
       },
       required: ["template", "id", "name", "role", "brief"],
@@ -444,14 +528,17 @@ const DECISION_SCHEMA = {
     accessRequest: {
       type: ["object", "null"],
       description:
-        "When the room cannot proceed ONLY because it lacks read access to a folder or to KooyaPedia, ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Null otherwise.",
+        `When the room cannot proceed ONLY because it lacks access (to read a folder, to KooyaPedia, or to run one of the scripts Dominic made askable), ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Never ask for broad shell or Bash: ask for the one script that does the job. Askable scripts: ${askableList()}. Null otherwise.`,
       properties: {
         kind: {
           type: "string",
-          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write"],
-          description: "dir = read a folder. dir-write = read and edit it. kooyapedia = read the wiki. kooyapedia-write = edit wiki articles.",
+          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write", "wrapper"],
+          description:
+            "dir = read an EXISTING folder. dir-write = read/edit, and create on Allow if missing (scaffold). " +
+            "Missing folder + dir drops the Allow button — use dir-write for new projects. " +
+            "kooyapedia = read the wiki. kooyapedia-write = edit wiki articles. wrapper = run one askable script, named in path.",
         },
-        path: { type: ["string", "null"], description: "The folder, Windows or WSL form. Null for kooyapedia." },
+        path: { type: ["string", "null"], description: "The folder, Windows or WSL form. For wrapper, the script's name, e.g. hq-model. Null for kooyapedia." },
         agents: { type: "array", items: { type: "string" }, description: "Agent ids that need it." },
         reason: { type: "string", description: "One plain sentence, Taglish: what it is for." },
       },
@@ -837,14 +924,17 @@ const PROGRESS_SCHEMA = {
     accessRequest: {
       type: ["object", "null"],
       description:
-        "When the room cannot proceed ONLY because it lacks read access to a folder or to KooyaPedia, ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Null otherwise.",
+        `When the room cannot proceed ONLY because it lacks access (to read a folder, to KooyaPedia, or to run one of the scripts Dominic made askable), ask for it here instead of describing it in prose. Dominic gets Allow / Always allow / Deny buttons and the run pauses until he taps one. Never ask for broad shell or Bash: ask for the one script that does the job. Askable scripts: ${askableList()}. Null otherwise.`,
       properties: {
         kind: {
           type: "string",
-          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write"],
-          description: "dir = read a folder. dir-write = read and edit it. kooyapedia = read the wiki. kooyapedia-write = edit wiki articles.",
+          enum: ["dir", "dir-write", "kooyapedia", "kooyapedia-write", "wrapper"],
+          description:
+            "dir = read an EXISTING folder. dir-write = read/edit a folder, AND create it on Allow when it does not exist yet (scaffold / new project). " +
+            "If the room needs to write files or the folder is not there yet, you MUST use dir-write — dir on a missing path drops the Allow button. " +
+            "kooyapedia = read the wiki. kooyapedia-write = edit wiki articles. wrapper = run one askable script, named in path.",
         },
-        path: { type: ["string", "null"], description: "The folder, Windows or WSL form. Null for kooyapedia." },
+        path: { type: ["string", "null"], description: "The folder, Windows or WSL form. For wrapper, the script's name, e.g. hq-model. Null for kooyapedia." },
         agents: { type: "array", items: { type: "string" }, description: "Agent ids that need it." },
         reason: { type: "string", description: "One plain sentence, Taglish: what it is for." },
       },
@@ -854,17 +944,17 @@ const PROGRESS_SCHEMA = {
     blocker: {
       type: ["string", "null"],
       description:
-        "On blocked: precisely what stopped, and what was already tried. Null otherwise.",
+        "On blocked: precisely what stopped, and what was already tried. Null when the stop is an accessRequest (buttons), not a prose ask. Null otherwise.",
     },
     needFromDominic: {
       type: ["string", "null"],
       description:
-        "On blocked: the one thing you need from him, stated as an action he can take. Null otherwise.",
+        "On blocked: the one thing you need from him, stated as an action he can take. Null when accessRequest is set — he already has Allow buttons. Null otherwise.",
     },
     choices: {
       type: ["array", "null"],
       description:
-        "On blocked, WHEN the thing you need is a decision between concrete options: two to four of them. He gets a button per option and the room restarts the moment he taps one, so this turns a question that would have waited hours into one that waits seconds. Only for real alternatives you have actually thought through — never 'yes/no', never 'you decide'. Null when what you need is not a choice, such as a credential or an answer only he knows.",
+        "On blocked, WHEN the thing you need is a decision between concrete options: two to four of them. He gets a button per option and the room restarts the moment he taps one, so this turns a question that would have waited hours into one that waits seconds. Only for real alternatives you have actually thought through — never 'yes/no', never 'you decide'. Null when accessRequest is set, or when what you need is not a choice, such as a credential or an answer only he knows.",
       items: {
         type: "object",
         properties: {
@@ -1028,6 +1118,38 @@ function resolveNext(raw: string | null, members: Agent[]): Agent | null {
  * of "this is a chat" and its rooms averaged half the length of the rooms whose
  * dispatch line was "reply once, in your own voice".
  */
+/**
+ * What a human line means when it lands while the room is mid-run.
+ *
+ *   status   — "ano na", "update?", "kamusta": answered instantly from the
+ *              live board, no model call.
+ *   question — anything else that reads as a question: one cheap side reply
+ *              from the orchestrator now; the next speaker also sees the line
+ *              as NEW in the transcript.
+ *   work     — an assignment: acknowledged now, queued, runs when this run ends.
+ */
+function classifyMidRun(text: string): "status" | "question" | "work" {
+  const t = text.trim();
+  if (!t) return "work";
+  const short = t.length <= 160;
+  if (
+    short &&
+    /\b(update|status|progress|ano na|anong (nangyayari|update|status)|kamusta|kumusta|saan na|asan na|nasaan|tapos na ba|how('s| is) it going|where are (we|you)|what'?s happening|eta)\b/i.test(
+      t,
+    )
+  ) {
+    return "status";
+  }
+  if (
+    t.length <= 300 &&
+    (/\?\s*$/.test(t) ||
+      /^(ano|bakit|paano|pwede|kaya ba|totoo ba|may|meron|wala|can|could|is|are|do|does|did|what|why|how|when|which|who|should|would)\b/i.test(t))
+  ) {
+    return "question";
+  }
+  return "work";
+}
+
 function turnInstruction(lead: string): string {
   return [
     `${lead} Do whatever the work needs, then reply as ONE chat message, Taglish:`,
@@ -1195,6 +1317,90 @@ export class Orchestrator {
       );
     }, 0);
     return true;
+  }
+
+  /** Where the run is, from the live state and the board. No model call. */
+  private postStatus(roomId: string): void {
+    const run = this.runs.get(roomId);
+    if (!run) return;
+    const s = run.state;
+    const agents = this.getAgents();
+    const who = s.speaking ? (agents.get(s.speaking)?.name ?? s.speaking) : "nobody";
+    const mins = Math.max(1, Math.round((Date.now() - s.startedAt) / 60000));
+    const goal = s.goalId ? getGoal(s.goalId) : null;
+    const steps = goal?.steps ?? [];
+    const done = steps.filter((st) => st.status === "done").length;
+    const active = steps.filter((st) => st.status === "active");
+    const last = listMessages(roomId, 12)
+      .filter((m) => m.kind === "agent")
+      .at(-1);
+    const lines = [
+      `Status: turn ${s.turn}/${s.maxTurns}, ${mins} min in, ${who} ${s.phase === "waiting_slot" ? "waiting for a slot" : "working"}.`,
+      goal ? `Goal: ${goal.title} — ${done}/${steps.length} steps done.` : "No goal yet (still planning).",
+      ...active.map((st) => `Now: ${st.title}${st.ownerId ? ` (${st.ownerId})` : ""}`),
+      last ? `Last said [#${last.seq ?? "?"}]: ${last.text.replace(/\s+/g, " ").slice(0, 200)}` : "",
+      "Anything you type is seen by the next speaker; new work queues behind this run.",
+    ].filter(Boolean);
+    this.post({ roomId, authorId: "system", kind: "notice", text: lines.join("\n") });
+  }
+
+  /**
+   * One cheap side reply to a question asked mid-run. The orchestrator answers
+   * from the live board and the last few lines, in one or two sentences, and
+   * never re-plans: the run keeps going, and the human line is already in the
+   * transcript for the next speaker.
+   */
+  private async aside(roomId: string, humanText: string): Promise<void> {
+    const run = this.runs.get(roomId);
+    const room = getRoom(roomId);
+    if (!run || !room) return;
+    const agents = this.getAgents();
+    const orchestrator = agents.get(room.orchestratorId);
+    if (!orchestrator) return;
+    const roster = room.members
+      .map((id) => agents.get(id))
+      .filter((a): a is Agent => a !== undefined);
+    const board = planText(run.state.goalId);
+    const recent = renderTranscript(listMessages(roomId, 10), agents);
+    const result = await this.runTurn({
+      agent: orchestrator,
+      roomName: room.name,
+      roster,
+      roomId,
+      chatTurn: true,
+      effort: "low",
+      signal: run.abort.signal,
+      busyPhase: "generating",
+      aside: true,
+      prompt: [
+        `The room is mid-run (turn ${run.state.turn}/${run.state.maxTurns}).`,
+        board ? `Live board:\n${board}` : "No goal yet; the room is still planning.",
+        "",
+        "Last lines:",
+        recent,
+        "",
+        "Dominic just asked this WHILE the run is going:",
+        "---",
+        humanText,
+        "---",
+        "Reply as ONE short Taglish chat message, one or two sentences: answer him",
+        "from the board and the lines above, and say whether what he asked changes",
+        "anything. Do not plan, do not assign, do not stop the run; the next speaker",
+        "will see his line as NEW. No markers.",
+      ].join("\n"),
+    });
+    if (result.costUsd) run.state.costUsd += result.costUsd;
+    const text = result.isError ? "" : result.text.trim();
+    this.post({
+      roomId,
+      authorId: orchestrator.id,
+      kind: "agent",
+      text: text || "Nabasa ko; tuloy ang run, makikita ng susunod na speaker ang tanong mo.",
+      directedBy: "human",
+      costUsd: result.costUsd,
+      durationMs: result.durationMs,
+      promptSha: result.promptSha,
+    });
   }
 
   constructor(emit: Emit, getAgents: () => Map<string, Agent>) {
@@ -1417,6 +1623,16 @@ export class Orchestrator {
     const resolved = resolveGrant(request.kind, request.path);
     if ("error" in resolved) return refuse(resolved.error);
     const { grant, label } = resolved;
+    // A new project folder is made here and only here: this runs on Dominic's
+    // own typed message or on the Allow he tapped, never on an agent's ask.
+    if (resolved.create && !existsSync(resolved.create)) {
+      try {
+        mkdirSync(resolved.create);
+      } catch (err) {
+        return refuse(`could not create ${resolved.create}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      this.post({ roomId, authorId: "system", kind: "event", text: `created · ${resolved.create} · on Dominic's Allow` });
+    }
 
     const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
     const targets = (named.length ? named : roster.map((a) => a.id)).filter((id) => id !== orchestrator.id || named.includes(id));
@@ -1446,7 +1662,7 @@ export class Orchestrator {
       roomId,
       authorId: "system",
       kind: "event",
-      text: `access · ${done.join(", ")} may now read ${label} · granted by Dominic`,
+      text: `access · ${done.join(", ")} may now ${request.kind === "wrapper" ? "run" : "read"} ${label} · granted by Dominic`,
     });
     if (request.kind === "dir") {
       this.post({
@@ -1472,8 +1688,27 @@ export class Orchestrator {
     agents: Map<string, Agent>;
     request: AccessAsk;
   }): "asked" | "held" | "dropped" {
-    const { roomId, room, state, roster, agents, request } = opts;
-    const resolved = resolveGrant(request.kind, request.path);
+    const { roomId, room, state, roster, agents } = opts;
+    // Orchestrators often send kind:dir for "the project folder" even when the
+    // folder has not been scaffolded yet. Read of a missing path can never
+    // succeed, so the Allow button used to be dropped and Dominic only got
+    // prose ("Allow sa dir-write…") with nothing to tap — and WhatsApp kept
+    // escalating the same stuck scaffold. Upgrade to dir-write (create on Allow).
+    let request = opts.request;
+    let resolved = resolveGrant(request.kind, request.path);
+    if ("error" in resolved && request.kind === "dir" && request.path) {
+      const asWrite = resolveGrant("dir-write", request.path);
+      if (!("error" in asWrite)) {
+        request = { ...request, kind: "dir-write" };
+        resolved = asWrite;
+        this.post({
+          roomId,
+          authorId: "system",
+          kind: "notice",
+          text: `Access ask upgraded to dir-write — ${request.path} does not exist yet; Allow will create it.`,
+        });
+      }
+    }
     if ("error" in resolved) {
       this.post({ roomId, authorId: "system", kind: "notice", text: `Access request dropped: ${resolved.error}` });
       return "dropped";
@@ -1499,21 +1734,26 @@ export class Orchestrator {
     }
     const who = targets.map((id) => agents.get(id)?.name ?? id).join(", ");
     const base = { kind: request.kind, path: request.path, agents: targets, goalId: state.goalId };
+    const runs = request.kind === "wrapper";
+    const writes = request.kind === "dir-write" || request.kind === "kooyapedia-write";
+    const verb = runs ? "run" : writes ? "write" : "read";
     const choices: Choice[] = [
       {
         label: "Allow for this goal",
-        detail: `${who} can read ${resolved.label} until this goal closes.`,
+        detail: `${who} can ${verb} ${resolved.label} until this goal closes.`,
         grant: { ...base, scope: "goal" },
       },
       {
         label: "Always allow",
-        detail: `${who} keep read access to ${resolved.label}; written into ${targets.length === 1 ? "its" : "their"} file.`,
+        detail: `${who} keep ${runs ? "permission to run" : writes ? "write access to" : "read access to"} ${resolved.label}; written into ${targets.length === 1 ? "its" : "their"} file.`,
         grant: { ...base, scope: "always" },
       },
       { label: "Deny", detail: "The room carries on without it and says what it could not check.", grant: null },
     ];
+    const need =
+      runs ? "permiso na patakbuhin ang" : writes ? "write access sa" : "read access sa";
     const text =
-      `🔐 Kailangan ni ${who} ng read access sa ${resolved.label} para ituloy.` +
+      `🔐 Kailangan ni ${who} ng ${need} ${resolved.label} para ituloy.` +
       (cleanField(request.reason) ? `\n${cleanField(request.reason)}` : "") +
       `\nPayag ka? Tap one below.`;
     this.post({ roomId, authorId: room.orchestratorId, kind: "handoff", text, directedBy: null, choices });
@@ -1718,6 +1958,12 @@ export class Orchestrator {
     roomId: string;
     /** Phase once the Claude slot is held. */
     busyPhase: RunPhase;
+    /**
+     * A side reply while a run is in flight (mid-run question from Dominic).
+     * Takes a Claude slot like any turn but never touches the live run's
+     * phase, speaker or timers, so the run bar keeps showing the real work.
+     */
+    aside?: boolean;
   }): Promise<{
     text: string;
     structured: unknown;
@@ -1730,7 +1976,7 @@ export class Orchestrator {
     /** Which CLI ran it — shown in the transcript and the run bar. */
     driver: string;
   }> {
-    const run = this.runs.get(opts.roomId);
+    const run = opts.aside ? undefined : this.runs.get(opts.roomId);
     if (run && this.gate.saturated) {
       this.setPhase(
         run.state,
@@ -2398,7 +2644,7 @@ export class Orchestrator {
         `Answer "blocked" only when the work has actually stopped and nothing in`,
         `this room can restart it: you need a decision, a credential, a change to`,
         `the code, or access that none of us has. Then say exactly what you need.`,
-        `If what you need is ACCESS — a folder, the wiki, a tool — put it in`,
+        `If what you need is ACCESS — a folder, the wiki, one askable script — put it in`,
         `accessRequest, not in blocker: Dominic gets Allow buttons, and the room`,
         `does not stop for a paragraph. Never ask anyone here to edit frontmatter.`,
         "",
@@ -2878,8 +3124,24 @@ export class Orchestrator {
     opts: { skipPost?: boolean } = {},
   ): Promise<void> {
     if (this.runs.has(roomId)) {
+      // Dominic keeps talking while the room works, the way he can with a
+      // chat model. His line lands in the transcript now (the next speaker
+      // sees it as NEW). What happens next depends on what it is: a status
+      // ask is answered instantly from the board, a question gets one cheap
+      // side reply from the orchestrator, and only real work is queued.
       if (humanText.trim() && !opts.skipPost) {
         this.post({ roomId, authorId: "human", kind: "human", text: humanText });
+      }
+      const kind = resumeGoalId ? "work" : classifyMidRun(humanText);
+      if (kind === "status") {
+        this.postStatus(roomId);
+        return;
+      }
+      if (kind === "question") {
+        void this.aside(roomId, humanText).catch((err: unknown) =>
+          console.error("[aside] failed:", err instanceof Error ? err.message : err),
+        );
+        return;
       }
       this.enqueue(roomId, {
         kind: "start",

@@ -19,13 +19,7 @@ Researcher
 Researcher
 
 ## Description
-Finds out. Searches the web, reads pages, and looks up the ECC skills library
-(`bash /home/dominickooya/agora/scripts/ecc-lookup.sh search <words>`)
-when the room needs a pattern, a fact, a doc, or the current state of something,
-and KooyaPedia, the team's internal wiki
-(`bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh search <words>`,
-`... show <slug>`, `... projects [name]`), for anything about HelloAlex, Bland,
-or the team's own runbooks and disk projects under `/mnt/c/Projects`.
+Finds out what the web, the ECC skills library, and KooyaPedia say about a question, with the source cited.
 
 ## Instructions
 Start from the question in the brief, not from a plan. When Dominic names a

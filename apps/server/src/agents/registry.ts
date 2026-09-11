@@ -117,6 +117,16 @@ export function listTemplates(): string[] {
  * one a capability, because the only capabilities that exist are the ones
  * Dominic wrote into a template.
  */
+/** The first sentence or two of a brief, capped, as a lane statement. */
+function laneFromBrief(brief: string): string {
+  const flat = brief.replace(/\s+/g, " ").trim();
+  if (!flat) return "";
+  const parts = flat.split(/(?<=[.!?])\s+/);
+  let out = parts[0] ?? "";
+  if (parts[1] && (out + " " + parts[1]).length <= 240) out += " " + parts[1];
+  return out.slice(0, 260);
+}
+
 export function forgeAgent(input: {
   template: string;
   id: string;
@@ -141,6 +151,10 @@ export function forgeAgent(input: {
   const name = input.name.trim().slice(0, 60) || base.name;
   const role = input.role.trim().slice(0, 60) || base.role;
   const brief = input.brief.trim().slice(0, 2000);
+  // The first sentence of the brief is the agent's lane and becomes its own
+  // description of its skills. Capabilities are NOT written here: the prompt
+  // builder derives them from the frontmatter on every turn (describeCapabilities).
+  const lane = laneFromBrief(brief) || base.description.trim();
 
   const frontmatter =
     fm[1] +
@@ -158,7 +172,7 @@ export function forgeAgent(input: {
     role,
     "",
     "## Description",
-    base.description.trim(),
+    lane,
     "",
     "## Instructions",
     base.instructions.trim(),
@@ -457,6 +471,86 @@ function qaCredentials(): string {
 }
 
 /**
+ * What an agent can and cannot do, in plain sentences, derived from the grants
+ * it holds RIGHT NOW. Built on every turn, so it never drifts when a per-goal
+ * grant is given or returned. This is the text that used to be hand-written
+ * into `## Description`; the description is now only the agent's lane.
+ */
+const WRAPPER_PHRASES: Record<string, string> = {
+  "kooyapedia-lookup.sh": "read KooyaPedia, the team wiki (kooyapedia-lookup.sh search, show, recent, projects)",
+  "kooyapedia-edit.sh": "edit KooyaPedia articles through kooyapedia-edit.sh (get, set, new)",
+  "kooyapedia-start.sh": "bring KooyaPedia up if it is down (kooyapedia-start.sh)",
+  "ecc-lookup.sh": "look up the ECC skills library (ecc-lookup.sh search, list, show)",
+  "agent-edit.sh":
+    "edit the Instructions or Personality of an agent file, or a room's rules, through agent-edit.sh (show, preview, set, undo); frontmatter, names and roles are refused",
+  "agora-eval.sh": "measure an agent with the eval (agora-eval.sh --agent <id>)",
+  "git-read.sh": "read git history and diffs (git-read.sh)",
+  "claude-run.sh": "execute inside the Voicemail Detection project through claude-run.sh (read and inspect; it cannot launch training)",
+  "claude-edit.sh": "change files in the Voicemail Detection project through claude-edit.sh",
+  "train-launch.sh": "start a training run and return immediately (train-launch.sh)",
+  "erasr-run.sh": "run and inspect erasr through erasr-run.sh",
+  "erasr-edit.sh": "change erasr files through erasr-edit.sh",
+  "erasr-bench.sh": "benchmark erasr through erasr-bench.sh",
+  "erasr-job.sh": "run a long erasr job through erasr-job.sh",
+  "start-chrome.sh": "start the QA browser (start-chrome.sh)",
+};
+const EDIT_WRAPPERS = new Set(["kooyapedia-edit.sh", "agent-edit.sh", "claude-edit.sh", "erasr-edit.sh"]);
+const RUN_WRAPPERS = new Set(["claude-run.sh", "train-launch.sh", "erasr-run.sh", "erasr-bench.sh", "erasr-job.sh", "kooyapedia-start.sh"]);
+
+export function describeCapabilities(agent: Agent): string {
+  const allow = effectiveAllow(agent);
+  const wrappers = allow
+    .map((g) => /scripts\/([a-z0-9-]+\.sh)/.exec(g)?.[1])
+    .filter((x): x is string => Boolean(x));
+  const web = allow.some((g) => /^WebSearch/.test(g)) || agent.tools.includes("WebSearch");
+  const fetch = allow.some((g) => /^WebFetch/.test(g)) || agent.tools.includes("WebFetch");
+  const canRead = ["Read", "Glob", "Grep"].some((t) => agent.tools.includes(t));
+  const canWrite = ["Write", "Edit"].some((t) => agent.tools.includes(t));
+  const dirs = agent.addDirs;
+
+  const can: string[] = [];
+  if (canRead) {
+    can.push(dirs.length ? `read files under ${dirs.join(", ")}` : "read files in the Agora repo itself (its agents, scripts and code)");
+  }
+  if (canWrite) {
+    can.push(dirs.length ? `create and edit files under ${dirs.join(", ")}` : "create and edit files in the Agora repo itself");
+  }
+  if (web) can.push("search the web (WebSearch)");
+  if (fetch) can.push("read web pages (WebFetch)");
+  for (const w of [...new Set(wrappers)]) can.push(WRAPPER_PHRASES[w] ?? `run ${w}`);
+  for (const id of agent.mcp) {
+    can.push(id === "chrome-devtools" ? "drive the QA browser through the chrome-devtools MCP server" : `use the ${id} MCP server`);
+  }
+  if (agent.tools.includes("Bash") && wrappers.length === 0) {
+    can.push("run shell commands only through wrappers you are granted (none right now)");
+  }
+
+  const cannot: string[] = [];
+  if (!canWrite && !wrappers.some((w) => EDIT_WRAPPERS.has(w))) cannot.push("create or edit files");
+  if (!wrappers.includes("kooyapedia-lookup.sh") && !wrappers.includes("kooyapedia-edit.sh")) {
+    cannot.push("read the wiki unless a goal grants kooyapedia-lookup.sh");
+  }
+  if (!web && !fetch) cannot.push("reach the web");
+  if (!wrappers.some((w) => RUN_WRAPPERS.has(w))) cannot.push("execute or start anything");
+  if (!canRead && !dirs.length) cannot.push("see project folders on disk");
+
+  return [
+    can.length ? "You can:" : "You can: nothing beyond reading this transcript and replying to it.",
+    ...can.map((c) => `- ${c}`),
+    cannot.length ? `You cannot ${cannot.join("; ")}.` : "",
+    agent.tools.includes("Bash")
+      ? "Bash runs only the wrappers listed above; anything else is refused."
+      : "",
+    "Use what you hold rather than asking someone to fetch it, and never claim to",
+    "have checked something you cannot reach. Spawning a colleague never adds a",
+    "capability: a forged agent has exactly its template's grants. Say what you",
+    "cannot do in one line and name who in the room can.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
  * The system prompt handed to `claude -p --system-prompt`. Built from the .md
  * so editing the file is the only way to change how an agent behaves.
  */
@@ -546,14 +640,7 @@ export function buildSystemPrompt(
         ].join("\n")
       : opts.chatTurn
       ? ""
-      : `Tools available to you: ${agent.tools.join(", ") || "(none built-in)"}.` +
-        (agent.addDirs.length
-          ? ` You may read under: ${agent.addDirs.join(", ")}.`
-          : "") +
-        (agent.mcp.length
-          ? ` Browser control via the ${agent.mcp.join(", ")} MCP server.`
-          : "") +
-        " Use them rather than asking someone to fetch things for you.",
+      : describeCapabilities(agent),
     // Credentials come from .env at runtime, never from the agent's .md file.
     agent.mcp.includes("chrome-devtools") && config.qaEmail ? qaCredentials() : "",
   ]

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Agent, AgentStatus, Room, RunState } from "../lib/types.ts";
+import { applyTheme, readTheme, toggleTheme, type Theme } from "../lib/theme.ts";
 import { Av } from "./bits.tsx";
 
 export type View = "dashboard" | "workflow" | "chatroom";
@@ -81,6 +82,11 @@ export function Rail({
 }: Props) {
   const [tab, setTab] = useState<"rooms" | "agents">(dmAgentId ? "agents" : "rooms");
   const [query, setQuery] = useState("");
+  const [theme, setTheme] = useState<Theme>(() => {
+    const t = readTheme();
+    applyTheme(t);
+    return t;
+  });
 
   const needle = query.trim().toLowerCase();
   const shownRooms = rooms.filter((r) => !needle || r.name.toLowerCase().includes(needle));
@@ -218,6 +224,24 @@ export function Rail({
             <button className="retry" onClick={onReconnect}>Disconnected — retry now</button>
           )}
         </div>
+        <button
+          type="button"
+          className="themebtn"
+          onClick={() => setTheme(toggleTheme(theme))}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 14.3A8.5 8.5 0 1 1 9.7 3a7 7 0 0 0 11.3 11.3z" />
+            </svg>
+          )}
+        </button>
       </div>
     </nav>
   );

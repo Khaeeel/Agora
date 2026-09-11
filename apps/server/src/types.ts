@@ -42,7 +42,7 @@ export interface Agent {
  * applies exactly this — never something the model rewrote in between.
  */
 export interface AccessGrant {
-  kind: "dir" | "dir-write" | "kooyapedia" | "kooyapedia-write";
+  kind: "dir" | "dir-write" | "kooyapedia" | "kooyapedia-write" | "wrapper";
   path: string | null;
   agents: string[];
   /** goal = taken back when the goal closes; always = stays in the agent's file. */

@@ -66,3 +66,30 @@ that one holder can cover in two steps.
 - No report steps, no spawn/grant/room steps.
 - Each step names its evidence; `dependsOn` honest both ways.
 - Last step verifies, not by the builder.
+
+## Verified facts — checked 2026-09-11; re-check before contradicting them
+
+- **This PC has an NVIDIA GPU**: RTX 4070 SUPER, 12 GB, driver 591.86. WSL sees
+  it at `/usr/lib/wsl/lib/nvidia-smi`, a directory a sandboxed PATH often
+  lacks — a missing `nvidia-smi` on PATH is not "no driver". The vLLM image sees
+  the GPU too, through `docker run --gpus all`. Never report "walang GPU" or
+  "walang NVIDIA driver dito".
+- **Nothing is left to install.** `vllm/vllm-openai:v0.22.1` is pulled, and the
+  `llm/Qwen3-4B-Instruct-2507` weights in
+  `/mnt/c/Projects/HelloAlex-Local-Model/models/llm/Qwen3-4B-Instruct-2507`
+  match `serving/models.lock` file for file.
+- **Serve the weights where they are.** Dominic decided not to copy them into
+  `C:\Projects\HQ-RAG-Chatbot`.
+- **What is not done is serving.** `.env.gpu` in HelloAlex-Local-Model is for
+  the production GPU host: the 8B AWQ model, host 10.0.1.20, `/data/models`,
+  0.70 GPU memory and a 20–24 GB container memory reserve. None of that fits
+  this 12 GB card and 16 GB WSL VM. Serving here needs host settings Dominic
+  has not chosen yet — say exactly that, never "GPU-blocked".
+- The GPU is shared with the Voicemail Detection room's training runs.
+
+## Doing, not just reporting
+
+To check the GPU, the image or the weights, run
+`bash /home/dominickooya/agora/scripts/hq-model.sh status | verify | download`.
+If you do not hold it, say you need "the hq-model script": the room turns that
+into an Allow button for Dominic. Never ask for broad shell or Bash.

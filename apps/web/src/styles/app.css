@@ -1894,311 +1894,156 @@ textarea {
   transition: width 0.4s ease;
 }
 
-/* ── step flow ─────────────────────────────────────────────────────────── */
+/* ── step timeline (phase-timeline.html) ─────────────────────────────────
+   Axis + fill, numbered nodes, "You are here" on the current phase. Goals
+   map 1:1 onto phases; each step is one column. */
 
-/* overflow-x:auto forces the other axis to compute to `auto` too, so this box
-   clips vertically whether we want it to or not. The bottom padding keeps the
-   last line of a card clear of that edge (and of the horizontal scrollbar). */
-.flow__scroll {
+.tlcard {
   overflow-x: auto;
-  overflow-y: hidden;
-  padding: 8px 0 14px;
+  margin-top: 6px;
+  padding: 8px 4px 4px;
 }
 
-.flow {
-  display: flex;
-  align-items: flex-start;
-  gap: 0;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  min-width: min-content;
-}
-
-/* Fixed width, natural height. Cards grow downward into empty space, so no
-   amount of text can collide with anything. */
-.flowstep {
+.tl {
   position: relative;
-  flex: 0 0 auto;
-  width: 216px;
-  padding: 0 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  min-width: 720px;
+  gap: 0;
 }
 
-/* ── the connector ─────────────────────────────────────────────────────────
-
-   Was a 36px stub floating in the gap. It is now a real span between the
-   discs carrying four things: the line, an arrowhead at the end it feeds, a
-   travelling pulse, and a caption above it.
-
-   The geometry: a .flowstep is 216px wide with 12px of padding, so its 54px
-   disc starts at 12 + (192 - 54) / 2 = 81px. The previous step's disc
-   therefore ends at -81px. The link spans that gap, held back 9px at each end
-   so it never touches either disc. */
-.link {
+.tl__axis {
   position: absolute;
-  top: 26px;
-  left: -72px;
-  width: 144px;
-  height: 2px;
+  left: 10%;
+  right: 10%;
+  top: 34px;
+  height: 4px;
+  background: var(--edge);
+  border-radius: 2px;
   pointer-events: none;
 }
 
-.link__line {
-  position: absolute;
-  inset: 0;
-  border-radius: 1px;
-  background: var(--edge);
-}
-
-/* Where the run actually travelled. */
-.link--done .link__line {
-  background: var(--violet-dim);
-}
-
-/* Into the step being worked on: lit at the start, fading out ahead of
-   itself, because the work has not arrived at the far end yet. */
-.link--live .link__line {
-  background: linear-gradient(90deg, var(--violet-dim), var(--edge));
-}
-
-/* The arrowhead. A CSS triangle rather than a glyph so it inherits the line's
-   colour exactly and never picks up a font's own metrics. */
-.link__head {
-  position: absolute;
-  right: -1px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  border-left: 6px solid var(--edge);
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: border-left-color 0.3s ease;
-}
-
-.link--done .link__head {
-  border-left-color: var(--violet-dim);
-}
-
-.link--live .link__head {
-  border-left-color: var(--accent);
-  filter: drop-shadow(0 0 5px var(--accent));
-}
-
-.link__pulse {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 26px;
-  height: 3px;
+.tl__fill {
+  height: 100%;
+  background: var(--accent);
   border-radius: 2px;
-  transform: translateY(-50%);
-  background: linear-gradient(90deg, transparent, var(--accent), #fff);
-  box-shadow: 0 0 10px var(--accent);
-  opacity: 0;
+  transition: width 0.5s ease;
 }
 
-/* The one animation on the board, and it means one thing: work is moving
-   along this edge right now. Gated on the query rather than merely shortened,
-   so that under reduced motion the pulse is absent instead of parked
-   mid-line, where it would read as a permanent marker. */
-@media (prefers-reduced-motion: no-preference) {
-  .link__pulse {
-    animation: travel 1.5s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-  }
-}
-
-@keyframes travel {
-  0% {
-    left: -26px;
-    opacity: 0;
-  }
-  18% {
-    opacity: 1;
-  }
-  82% {
-    opacity: 1;
-  }
-  100% {
-    left: 100%;
-    opacity: 0;
-  }
-}
-
-.link__cap {
-  position: absolute;
-  top: -19px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--muted);
-}
-
-.link--live .link__cap {
-  color: var(--accent);
-}
-
-/* ── the disc ──────────────────────────────────────────────────────────────
-
-   One shape for every state; border, fill and colour carry which one. The
-   number lives inside it and becomes a tick when the step is done, so there
-   is no separate badge on the rim — that was drawing the same number twice.
-
-   Note what is NOT here: green. The reference keeps its whole happy path in
-   the violet family and reserves amber for the one thing that needs a human,
-   so "finished" and "running" read as the same pipeline at different
-   brightness rather than as two unrelated signals. Blocked is the only colour
-   that breaks out, which is exactly the weight it should carry. */
-.gnode {
+.phase {
   position: relative;
+  text-align: center;
+  padding: 0 10px 8px;
+  min-width: 0;
+}
+
+.phase__here {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--amber);
+  height: 18px;
+  line-height: 18px;
+  letter-spacing: 0.02em;
+  visibility: hidden;
+}
+
+.phase--current .phase__here,
+.phase--blocked .phase__here {
+  visibility: visible;
+}
+
+.phase--blocked .phase__here {
+  color: var(--warn);
+}
+
+.phase__node {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  margin: 4px auto 0;
+  border: 3px solid var(--edge);
+  background: var(--surface);
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  flex: none;
-  border-radius: 50%;
-  border: 1.5px solid var(--edge-hot);
-  background: #0a0e19;
-  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-3);
+  position: relative;
+  z-index: 1;
   cursor: pointer;
   padding: 0;
   transition:
     border-color 0.25s ease,
-    box-shadow 0.25s ease,
     background 0.25s ease,
-    transform 0.15s ease;
+    box-shadow 0.25s ease,
+    color 0.25s ease;
 }
 
-.gnode:hover {
-  transform: scale(1.06);
+.phase__node:hover {
+  transform: scale(1.08);
 }
 
-.gnode__glyph {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  line-height: 1;
-  font-weight: 700;
-  transition: color 0.25s ease;
+.phase--done .phase__node {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
-.gnode--done {
-  border-color: var(--violet-dim);
-  background: rgb(var(--violet-rgb) / 0.08);
-  color: var(--accent);
+.phase--current .phase__node {
+  border-color: var(--amber);
+  color: var(--amber);
+  box-shadow: 0 0 0 6px rgb(var(--amber-rgb) / 0.16);
 }
 
-/* Not started and never reached are both dashed — neither was worked on — but
-   they are not the same claim, and the board has to keep them apart. Never
-   reached is dimmer and its ring is tighter, because it is a statement about
-   a run that ended, not about work still ahead. */
-.gnode--pending {
-  border-style: dashed;
-  opacity: 0.9;
-}
-
-.gnode--skipped {
-  border-style: dashed;
-  border-color: var(--edge);
-  opacity: 0.5;
-}
-
-.gnode--blocked {
-  border-color: var(--warn);
-  border-style: dashed;
-  background: none;
-  color: var(--warn);
-}
-
-/* Active but no process behind it — a run that stopped mid-step. It keeps the
-   accent so you can see where it got to, and pointedly does NOT get the halo,
-   which would claim work is happening. */
-.gnode--active {
-  border-color: var(--violet-dim);
-  background: rgb(var(--violet-rgb) / 0.1);
-  color: var(--accent);
-}
-
-/* Running for real. */
-.gnode--live {
-  border-color: transparent;
-  background: rgb(var(--violet-rgb) / 0.14);
+.phase--live.phase--current .phase__node {
   box-shadow:
-    0 0 0 1px var(--violet-dim),
-    0 0 26px rgb(var(--violet-rgb) / 0.28);
-  color: var(--text);
+    0 0 0 6px rgb(var(--amber-rgb) / 0.16),
+    0 0 18px rgb(var(--amber-rgb) / 0.28);
 }
 
-.gnode--live::after {
-  content: "";
-  position: absolute;
-  inset: -9px;
-  border-radius: 50%;
-  border: 1px solid rgb(var(--violet-rgb) / 0.4);
+.phase--blocked .phase__node {
+  border-color: var(--warn);
+  color: var(--warn);
+  box-shadow: 0 0 0 6px rgb(var(--amber-rgb) / 0.12);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .gnode--live::after {
-    animation: ping 2.1s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
-  }
+.phase--pending {
+  opacity: 0.6;
 }
 
-@keyframes ping {
-  0% {
-    transform: scale(0.86);
-    opacity: 0.9;
-  }
-  100% {
-    transform: scale(1.28);
-    opacity: 0;
-  }
-}
-
-/* The expanded step. Cyan is the only non-violet, non-amber colour on the
-   board and it means one thing: this is the one you clicked. */
-.gnode--sel {
-  outline: 1px solid var(--info);
-  outline-offset: 5px;
-}
-
-.gcard {
-  margin-top: 12px;
-  text-align: center;
+.phase__name {
+  display: block;
   width: 100%;
-}
-
-.gcard__title {
-  font-size: 12.5px;
-  font-weight: 500;
-  line-height: 1.4;
+  margin: 16px 0 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  text-align: center;
   text-wrap: balance;
   overflow-wrap: anywhere;
-  color: var(--ink);
+  cursor: pointer;
 }
 
-/* Finished and unreached steps step back, but stay READABLE. These were
-   --muted at 0.7 opacity, which on the dark theme was barely legible — an
-   unreached step still has to be readable to be useful. */
-.gcard__title--done,
-.gcard__title--skipped {
-  color: var(--ink-soft);
+.phase--pending .phase__name {
+  color: var(--muted);
 }
 
-/* Who runs this step. The reference's equivalent line names the ComfyUI class
-   doing the work; mono and dim, it reads as a machine fact rather than as
-   part of the title. */
-.gcard__owner {
+.phase__date {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.phase__owner {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  margin-top: 4px;
+  margin-top: 6px;
   width: 100%;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -2206,67 +2051,62 @@ textarea {
   color: var(--muted);
 }
 
-.gcard__status {
-  margin-top: 6px;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.phase__bar {
+  display: flex;
+  gap: 3px;
+  margin: 12px auto 6px;
+  max-width: 120px;
+}
+
+.phase__bar i {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--edge);
+}
+
+.phase--done .phase__bar i {
+  background: var(--accent);
+}
+
+.phase--current .phase__bar i.on {
+  background: var(--amber);
+}
+
+.phase--blocked .phase__bar i {
+  background: var(--warn);
+}
+
+.phase__cnt {
+  font-size: 12px;
   color: var(--muted);
 }
 
-.gcard__status--done {
-  color: var(--violet-dim);
+.phase--done .phase__cnt,
+.phase--current .phase__cnt,
+.phase--blocked .phase__cnt {
+  color: var(--ink);
 }
 
-.gcard__status--active {
-  color: var(--accent);
-}
-
-.gcard__status--blocked {
-  color: var(--warn);
-}
-
-.gcard__note {
-  display: block;
-  width: 100%;
-  margin-top: 7px;
-  padding: 6px 8px;
-  border: 0;
+.phase__note {
+  margin-top: 10px;
+  padding: 8px 10px;
   border-left: 2px solid var(--hairline-strong);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--raised);
-  font: inherit;
   font-size: 11px;
   line-height: 1.5;
   color: var(--ink-soft);
   text-align: left;
-  cursor: pointer;
   overflow-wrap: anywhere;
 }
 
-.gcard__note:hover {
-  border-left-color: var(--accent);
+.goal__phase {
+  color: var(--muted);
 }
 
-/* The clamp is on the inner span. Applied to the button it rendered an
-   ellipsis and then kept drawing the rest of the lines anyway, which is what
-   spilled text out through the bottom of the goal card. */
-.gcard__note-clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.gcard__note-more {
-  display: block;
-  margin-top: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--accent);
+.goal__phase strong {
+  color: var(--amber);
+  font-weight: 700;
 }
 
 /* ── see-it-yourself steps ─────────────────────────────────────────────── */
@@ -2661,7 +2501,7 @@ textarea {
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgb(3 4 9 / 0.74);
+  background: var(--scrim);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -3260,6 +3100,33 @@ body::after {
   }
 }
 
+/* Scanlines and void bloom are dark-HUD chrome — they read as dirt on paper. */
+:root[data-theme="light"] body::before,
+:root[data-theme="light"] body::after {
+  display: none;
+}
+
+:root[data-theme="light"] .agent-item:hover {
+  background: var(--wash);
+}
+
+/* Corner brackets follow brand accent in both themes. */
+:root[data-theme="light"] .dash__panel::before,
+:root[data-theme="light"] .dash__panel::after,
+:root[data-theme="light"] .participants::before,
+:root[data-theme="light"] .participants::after,
+:root[data-theme="light"] .modal::before,
+:root[data-theme="light"] .modal::after,
+:root[data-theme="light"] .goal::before,
+:root[data-theme="light"] .goal::after,
+:root[data-theme="light"] .decision::before,
+:root[data-theme="light"] .decision::after,
+:root[data-theme="light"] .planstrip::before,
+:root[data-theme="light"] .planstrip::after {
+  border-color: var(--accent);
+  opacity: 0.45;
+}
+
 /* ── corner brackets ───────────────────────────────────────────────────────
 
    The signature of the reference: a 7px L in each of two opposite corners, so
@@ -3588,14 +3455,14 @@ samp,
 }
 
 .lg--done i {
-  border-color: var(--violet-dim);
-  background: rgb(var(--violet-rgb) / 0.4);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .lg--active i {
-  border-color: transparent;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+  border-color: var(--amber);
+  background: transparent;
+  box-shadow: 0 0 0 3px rgb(var(--amber-rgb) / 0.16);
 }
 
 .lg--pending i {
@@ -3669,7 +3536,7 @@ samp,
   padding: 2px 6px;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
-  background: rgb(6 8 15 / 0.78);
+  background: var(--overlay-label);
   color: var(--ink-soft);
   font-family: var(--font-mono);
   font-size: 10px;

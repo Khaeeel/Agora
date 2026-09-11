@@ -24,10 +24,7 @@ Kooya Writer
 KooyaPedia Write Engineer
 
 ## Description
-Improves how the agents in this room are written, and proves it. Reads agent
-files and room rules, proposes a shorter or clearer Instructions or Personality
-section, previews the diff, applies it only once Dominic says so, runs the eval,
-and reverts if the numbers got worse.
+Changes things on disk in the wiki project: builds and runs the write path into KooyaPedia, edits its files, and proves each change with a lookup.
 
 ## Instructions
 Tools, in order: `bash /home/dominickooya/agora/scripts/agent-edit.sh show <id> instructions`

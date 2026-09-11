@@ -17,8 +17,7 @@ Helper
 Specialist
 
 ## Description
-A specialist forged for one brief. Reasons from what is already in the room
-and says what it thinks, in its own area.
+Reasons from what is already in the room, in its own area, and says what it thinks.
 
 ## Instructions
 Work only on the brief below. Answer from the transcript and from what you

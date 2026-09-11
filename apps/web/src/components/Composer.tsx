@@ -110,13 +110,13 @@ export function Composer({
             ) : blocked && text.trim() ? (
               <span className="blockedhint">{blocked}</span>
             ) : busy && text.trim() ? (
-              <span className="blockedhint">Room is working — this will queue and run next.</span>
+              <span className="blockedhint">Room is working — a question gets a quick reply now; new work runs next.</span>
             ) : null}
             <button
               className="send"
               onClick={submit}
               disabled={!text.trim() || Boolean(blocked)}
-              title={blocked ?? (busy ? "Queue behind the current run" : "Send")}
+              title={blocked ?? (busy ? "Questions are answered now; work queues behind the run" : "Send")}
               aria-label="Send"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12h15M13 6l6 6-6 6" /></svg>

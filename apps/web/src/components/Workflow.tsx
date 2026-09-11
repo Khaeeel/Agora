@@ -10,18 +10,7 @@ const STEP_LABEL: Record<StepStatus, string> = {
   skipped: "Never reached",
 };
 
-/**
- * What sits inside the disc.
- *
- * The reference puts the step number in every disc and swaps it for a tick
- * once the step is done, which is why there is no separate number badge on
- * the rim any more — the number was being drawn twice.
- *
- * Blocked keeps an exclamation rather than its number. In the reference,
- * blocked and queued are both dashed rings and only the colour separates
- * them; this file's own rule is that state survives greyscale, so blocked
- * needs a mark of its own.
- */
+/** Disc glyph: tick when done, bang when blocked, else the step number. */
 function glyph(status: StepStatus, index: number): string {
   if (status === "done") return "✓";
   if (status === "blocked") return "!";
@@ -37,13 +26,35 @@ function when(ts: number): string {
 }
 
 /**
- * Steps as one left-to-right flow.
- *
- * This was a serpentine grid on fixed 172px cells, which broke the moment a
- * real plan arrived: research step titles run well over a hundred characters,
- * overflowed their cell, and landed on top of the next row's nodes. A single
- * row cannot collide vertically no matter how long the text gets — cards grow
- * downward into empty space and the container scrolls sideways instead.
+ * Which node is "You are here" — the live/active step, else the first block,
+ * else the next pending after the last done (paused mid-goal).
+ */
+function currentIndex(steps: Step[]): number {
+  const active = steps.findIndex((s) => s.status === "active");
+  if (active >= 0) return active;
+  const blocked = steps.findIndex((s) => s.status === "blocked");
+  if (blocked >= 0) return blocked;
+  let lastDone = -1;
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i]?.status === "done") lastDone = i;
+  }
+  if (lastDone >= 0 && lastDone < steps.length - 1) return lastDone + 1;
+  if (lastDone === steps.length - 1) return lastDone;
+  return 0;
+}
+
+function phaseClass(step: Step, i: number, cur: number): string {
+  if (step.status === "done") return "done";
+  if (step.status === "blocked") return "blocked";
+  if (step.status === "skipped") return "pending";
+  if (i === cur) return "current";
+  if (i < cur) return "done";
+  return "pending";
+}
+
+/**
+ * Steps as a phase timeline (design from phase-timeline.html): axis + fill,
+ * numbered nodes, "You are here" on the current phase, name / date under each.
  */
 function StepGraph({
   steps,
@@ -52,124 +63,68 @@ function StepGraph({
 }: {
   steps: Step[];
   agents: Map<string, Agent>;
-  /** A process is running this goal right now. */
   live: boolean;
 }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const cur = currentIndex(steps);
+  const fillPct =
+    steps.length <= 1 ? (steps[0]?.status === "done" ? 100 : 0) : (cur / (steps.length - 1)) * 100;
 
   return (
-    <div className="flow__scroll">
-      <ol className="flow">
+    <div className="tlcard">
+      <div
+        className="tl"
+        style={{ gridTemplateColumns: `repeat(${Math.max(steps.length, 1)}, 1fr)` }}
+      >
+        <div className="tl__axis" aria-hidden="true">
+          <div className="tl__fill" style={{ width: `${fillPct}%` }} />
+        </div>
         {steps.map((step, i) => {
           const owner = step.ownerId ? agents.get(step.ownerId) : undefined;
           const open = openIdx === i;
-          // The connector into this step is solid only if the run got here.
-          const reached = step.status !== "pending" && step.status !== "skipped";
-          // The connector belongs to the step it feeds, so lighting up the
-          // active step's own line is the same thing as lighting the line
-          // travelling into it from the step before.
-          const flowing = live && step.status === "active" && i > 0;
+          const st = phaseClass(step, i, cur);
+          const here = st === "current" || (st === "blocked" && i === cur);
           return (
-            <li className="flowstep" key={step.id}>
-              {/* A static arrowhead tells you the order; a travelling pulse
-                  tells you work is moving right now. Only the connector into
-                  the step being worked on animates — so when a run stalls the
-                  board goes still, and you can see that from the doorway
-                  without reading a number. */}
-              {i > 0 && (
-                <span
-                  className={
-                    "link" + (flowing ? " link--live" : reached ? " link--done" : "")
-                  }
-                  aria-hidden="true"
-                >
-                  <span className="link__line" />
-                  <span className="link__head" />
-                  {flowing && <span className="link__pulse" />}
-                  {/* The caption describes the EDGE, not the step it feeds.
-                      "passed" — the reference's word — reads as a verdict once
-                      the step on the far end is blocked, and a board can show
-                      four blocked steps in a row. "Handed off" is both
-                      unambiguous and the vocabulary this codebase already
-                      uses for one step giving way to the next. */}
-                  {(flowing || reached) && (
-                    <span className="link__cap">
-                      {flowing ? "live" : "handed off"}
-                    </span>
-                  )}
-                </span>
-              )}
-
+            <div className={`phase phase--${st}${here && live ? " phase--live" : ""}`} key={step.id}>
+              <div className="phase__here">{st === "blocked" ? "Blocked here" : "You are here"}</div>
               <button
-                className={`gnode gnode--${step.status}${open ? " gnode--sel" : ""}${
-                  flowing || (live && step.status === "active") ? " gnode--live" : ""
-                }`}
+                type="button"
+                className="phase__node"
                 onClick={() => setOpenIdx(open ? null : i)}
                 aria-expanded={open}
                 title={STEP_LABEL[step.status]}
               >
-                <span className="gnode__glyph" aria-hidden="true">
-                  {glyph(step.status, i)}
-                </span>
+                {glyph(step.status, i)}
               </button>
-
-              <div className="gcard">
-                <div className={`gcard__title gcard__title--${step.status}`}>
-                  {step.title}
+              <button
+                type="button"
+                className="phase__name"
+                onClick={() => setOpenIdx(open ? null : i)}
+              >
+                {step.title}
+              </button>
+              <div className="phase__date">{when(step.updatedAt)}</div>
+              {owner && (
+                <div className="phase__owner">
+                  <Avatar agent={owner} size={14} />
+                  {owner.name}
                 </div>
-                {/* The reference names the operation under each node — the
-                    ComfyUI class doing the work. The equivalent here is the
-                    agent that owns the step, which is the same question:
-                    what, specifically, is running this. */}
-                {owner && (
-                  <div className="gcard__owner">
-                    <Avatar agent={owner} size={14} />
-                    {owner.name}
-                  </div>
-                )}
-                <div className={`gcard__status gcard__status--${step.status}`}>
-                  {STEP_LABEL[step.status]}
-                </div>
-                {step.note && (
-                  <button
-                    className="gcard__note"
-                    onClick={() => setOpenIdx(open ? null : i)}
-                    aria-expanded={open}
-                    title={open ? "Collapse" : "Show the full note"}
-                  >
-                    {/* The clamp lives on a span, not the button. -webkit-box
-                        on a button element is unreliable — the ellipsis drew
-                        but the remaining lines still rendered underneath and
-                        spilled out of the goal card. */}
-                    <span className={open ? "" : "gcard__note-clamp"}>{step.note}</span>
-                    <span className="gcard__note-more">{open ? "less" : "more"}</span>
-                  </button>
-                )}
+              )}
+              <div className="phase__bar" aria-hidden="true">
+                <i className={step.status === "done" || (here && step.status === "active") ? "on" : ""} />
               </div>
-            </li>
+              <div className="phase__cnt">{STEP_LABEL[step.status]}</div>
+              {step.note && open && <div className="phase__note">{step.note}</div>}
+            </div>
           );
         })}
-      </ol>
+      </div>
     </div>
   );
 }
 
 /**
- * The goal percentage as a dial: one tick per step, each tick carrying its
- * own step's status colour.
- *
- * This is the one running-state in the reference deck that claims to answer
- * "how far along?", and it is only allowed to make that claim where the data
- * genuinely exists. It does here — `done of total` is counted from the board,
- * not estimated — where it does NOT exist on an individual step, which is why
- * the step nodes get the ki charge instead.
- *
- * The ring says more than the number can: 60% because three steps finished
- * reads differently from 60% with a blocked step sitting in the middle, and
- * "60%" alone cannot tell you which one you are looking at.
- *
- * pathLength="100" normalises the circumference, so every dash figure below
- * is a percentage and none of it has to change if the radius does.
+ * Goal progress dial — one tick per step, coloured by that step's status.
  */
 function GoalDial({
   steps,
@@ -178,13 +133,9 @@ function GoalDial({
 }: {
   steps: Step[];
   pct: number;
-  /** A process is in flight — only then does the satellite orbit. */
   live: boolean;
 }) {
   const seg = 100 / Math.max(steps.length, 1);
-  // A gap between ticks, so the ring reads as a count of steps rather than as
-  // one continuous arc. Below about five steps the gap can be generous; past
-  // a dozen the ticks are thin enough that it has to shrink or they vanish.
   const dash = seg * (steps.length > 12 ? 0.8 : 0.66);
 
   return (
@@ -254,9 +205,7 @@ function GoalCard({
   goal: Goal;
   agents: Map<string, Agent>;
   live: boolean;
-  /** A process is actually in flight — not merely "this was the run's goal". */
   running: boolean;
-  /** Some run holds this room, so nothing else may start. */
   busy: boolean;
   onStop: () => void;
   onResume: (goalId: string) => void;
@@ -266,6 +215,8 @@ function GoalCard({
   const blocked = goal.steps.filter((s) => s.status === "blocked").length;
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
   const unfinished = total > 0 && done < total;
+  const cur = currentIndex(goal.steps);
+  const phaseN = total === 0 ? 0 : cur + 1;
 
   return (
     <article className={`goal${live ? " goal--live" : ""}`}>
@@ -273,6 +224,11 @@ function GoalCard({
         <div style={{ minWidth: 0 }}>
           <h2 className="goal__title">{goal.title}</h2>
           <p className="goal__meta">
+            {total > 0 && (
+              <span className="goal__phase">
+                Phase <strong>{phaseN}</strong> of {total}
+              </span>
+            )}
             <span className={`goal__badge goal__badge--${goal.status}`}>
               {goal.status === "active"
                 ? "Running"
@@ -285,16 +241,11 @@ function GoalCard({
               {done} of {total} done
             </span>
             {blocked > 0 && <span className="goal__blocked">{blocked} blocked</span>}
-            <span>{when(goal.createdAt)}</span>
+            <span>started {when(goal.createdAt)}</span>
           </p>
         </div>
         <div className="goal__right">
           <GoalDial steps={goal.steps} pct={pct} live={live && running} />
-          {/* One control per card, and which one it is says what the card can
-              do. A live run can be stopped; a goal that stopped short can be
-              picked back up. Retyping the prompt is the thing this replaces —
-              that plans a SECOND goal describing the same work, which is how
-              the same job ends up on the board twice. */}
           {live && running ? (
             <button
               className="goal__stop"
@@ -322,7 +273,9 @@ function GoalCard({
         </div>
       </header>
 
-      <StepGraph steps={goal.steps} agents={agents} live={live && running} />
+      {total > 0 ? (
+        <StepGraph steps={goal.steps} agents={agents} live={live && running} />
+      ) : null}
 
       {goal.verify && (
         <div className="verify">
@@ -370,9 +323,6 @@ export function Workflow({
 
   return (
     <div className="workflow">
-      {/* Five states share one ring shape, and three of them are separated by
-          colour and border alone. The reference carries a legend for exactly
-          this reason; with a fifth state to place, Agora needs it more. */}
       <div className="steplegend">
         <span className="lg lg--done">
           <i />
@@ -380,7 +330,7 @@ export function Workflow({
         </span>
         <span className="lg lg--active">
           <i />
-          In progress
+          You are here
         </span>
         <span className="lg lg--pending">
           <i />
