@@ -200,6 +200,9 @@ export function App() {
           <Workflow
             goals={state.goals}
             agents={agentMap}
+            members={room?.members ?? []}
+            orchestratorId={room?.orchestratorId ?? null}
+            statuses={state.statuses}
             activeGoalId={state.run?.goalId ?? null}
             roomName={room?.name ?? "the"}
             running={busy}

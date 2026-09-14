@@ -1,21 +1,6 @@
 import { useState } from "react";
-import type { Agent, Goal, Step, StepStatus } from "../lib/types.ts";
-import { Avatar } from "./bits.tsx";
-
-const STEP_LABEL: Record<StepStatus, string> = {
-  pending: "Not started",
-  active: "In progress",
-  done: "Done",
-  blocked: "Blocked",
-  skipped: "Never reached",
-};
-
-/** Disc glyph: tick when done, bang when blocked, else the step number. */
-function glyph(status: StepStatus, index: number): string {
-  if (status === "done") return "✓";
-  if (status === "blocked") return "!";
-  return String(index + 1);
-}
+import type { Agent, AgentStatus, Goal, Step } from "../lib/types.ts";
+import { HandoffGraph } from "./HandoffGraph.tsx";
 
 function when(ts: number): string {
   const d = new Date(ts);
@@ -41,86 +26,6 @@ function currentIndex(steps: Step[]): number {
   if (lastDone >= 0 && lastDone < steps.length - 1) return lastDone + 1;
   if (lastDone === steps.length - 1) return lastDone;
   return 0;
-}
-
-function phaseClass(step: Step, i: number, cur: number): string {
-  if (step.status === "done") return "done";
-  if (step.status === "blocked") return "blocked";
-  if (step.status === "skipped") return "pending";
-  if (i === cur) return "current";
-  if (i < cur) return "done";
-  return "pending";
-}
-
-/**
- * Steps as a phase timeline (design from phase-timeline.html): axis + fill,
- * numbered nodes, "You are here" on the current phase, name / date under each.
- */
-function StepGraph({
-  steps,
-  agents,
-  live,
-}: {
-  steps: Step[];
-  agents: Map<string, Agent>;
-  live: boolean;
-}) {
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
-  const cur = currentIndex(steps);
-  const fillPct =
-    steps.length <= 1 ? (steps[0]?.status === "done" ? 100 : 0) : (cur / (steps.length - 1)) * 100;
-
-  return (
-    <div className="tlcard">
-      <div
-        className="tl"
-        style={{ gridTemplateColumns: `repeat(${Math.max(steps.length, 1)}, 1fr)` }}
-      >
-        <div className="tl__axis" aria-hidden="true">
-          <div className="tl__fill" style={{ width: `${fillPct}%` }} />
-        </div>
-        {steps.map((step, i) => {
-          const owner = step.ownerId ? agents.get(step.ownerId) : undefined;
-          const open = openIdx === i;
-          const st = phaseClass(step, i, cur);
-          const here = st === "current" || (st === "blocked" && i === cur);
-          return (
-            <div className={`phase phase--${st}${here && live ? " phase--live" : ""}`} key={step.id}>
-              <div className="phase__here">{st === "blocked" ? "Blocked here" : "You are here"}</div>
-              <button
-                type="button"
-                className="phase__node"
-                onClick={() => setOpenIdx(open ? null : i)}
-                aria-expanded={open}
-                title={STEP_LABEL[step.status]}
-              >
-                {glyph(step.status, i)}
-              </button>
-              <button
-                type="button"
-                className="phase__name"
-                onClick={() => setOpenIdx(open ? null : i)}
-              >
-                {step.title}
-              </button>
-              <div className="phase__date">{when(step.updatedAt)}</div>
-              {owner && (
-                <div className="phase__owner">
-                  <Avatar agent={owner} size={14} />
-                  {owner.name}
-                </div>
-              )}
-              <div className="phase__bar" aria-hidden="true">
-                <i className={step.status === "done" || (here && step.status === "active") ? "on" : ""} />
-              </div>
-              <div className="phase__cnt">{STEP_LABEL[step.status]}</div>
-              {step.note && open && <div className="phase__note">{step.note}</div>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -196,6 +101,9 @@ function Handoff({ text }: { text: string }) {
 function GoalCard({
   goal,
   agents,
+  members,
+  orchestratorId,
+  statuses,
   live,
   running,
   busy,
@@ -204,6 +112,9 @@ function GoalCard({
 }: {
   goal: Goal;
   agents: Map<string, Agent>;
+  members: string[];
+  orchestratorId: string | null;
+  statuses: Record<string, AgentStatus>;
   live: boolean;
   running: boolean;
   busy: boolean;
@@ -274,7 +185,13 @@ function GoalCard({
       </header>
 
       {total > 0 ? (
-        <StepGraph steps={goal.steps} agents={agents} live={live && running} />
+        <HandoffGraph
+          goal={goal}
+          members={members}
+          orchestratorId={orchestratorId}
+          agents={agents}
+          statuses={statuses}
+        />
       ) : null}
 
       {goal.verify && (
@@ -292,6 +209,9 @@ function GoalCard({
 export function Workflow({
   goals,
   agents,
+  members,
+  orchestratorId,
+  statuses,
   activeGoalId,
   roomName,
   running,
@@ -300,6 +220,9 @@ export function Workflow({
 }: {
   goals: Goal[];
   agents: Map<string, Agent>;
+  members: string[];
+  orchestratorId: string | null;
+  statuses: Record<string, AgentStatus>;
   activeGoalId: string | null;
   roomName: string;
   running: boolean;
@@ -323,33 +246,14 @@ export function Workflow({
 
   return (
     <div className="workflow">
-      <div className="steplegend">
-        <span className="lg lg--done">
-          <i />
-          Done
-        </span>
-        <span className="lg lg--active">
-          <i />
-          You are here
-        </span>
-        <span className="lg lg--pending">
-          <i />
-          Not started
-        </span>
-        <span className="lg lg--blocked">
-          <i />
-          Blocked
-        </span>
-        <span className="lg lg--skipped">
-          <i />
-          Never reached
-        </span>
-      </div>
       {goals.map((goal) => (
         <GoalCard
           key={goal.id}
           goal={goal}
           agents={agents}
+          members={members}
+          orchestratorId={orchestratorId}
+          statuses={statuses}
           live={goal.id === activeGoalId}
           running={running}
           busy={running}

@@ -3496,11 +3496,272 @@ samp,
   padding: 1px 6px;
 }
 
-/* ── HD-2D gym view ────────────────────────────────────────────────────────
- *
- * The stage fills whatever the main column gives it and the renderer follows
- * via a ResizeObserver, so the diorama is never letterboxed or stretched.
- */
+/* ── handoff graph (workflow) ────────────────────────────────────────────── */
+
+.hg {
+  --hg-done: var(--ok);
+  --hg-active: var(--warn);
+  --hg-pending: var(--text-3);
+  --hg-blocked: var(--danger);
+  --pixel: "Press Start 2P", var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+}
+
+.hg__goalbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+  flex-wrap: wrap;
+}
+
+.hg__g {
+  flex: 1;
+  min-width: 0;
+}
+
+.hg__g strong {
+  display: block;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hg__g small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hg__bar {
+  height: 6px;
+  width: 140px;
+  background: var(--hairline);
+  position: relative;
+  flex: none;
+}
+
+.hg__bar i {
+  position: absolute;
+  inset: 0;
+  right: auto;
+  background: var(--hg-done);
+}
+
+.hg__pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+
+.hg__stage {
+  overflow-x: auto;
+  min-height: 280px;
+}
+
+.hg__stage svg {
+  display: block;
+  width: 100%;
+  min-width: 640px;
+  height: auto;
+}
+
+.hg__node {
+  cursor: pointer;
+}
+
+.hg__node:focus {
+  outline: none;
+}
+
+.hg__tag {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.hg__node--sel .hg__tag,
+.hg__node:focus .hg__tag {
+  stroke: var(--hg-active);
+  stroke-width: 2;
+}
+
+.hg__tagtext {
+  font-family: var(--pixel);
+  font-size: 7px;
+  fill: var(--ink);
+}
+
+.hg__sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--muted);
+}
+
+.hg__edge {
+  fill: none;
+  stroke-width: 2;
+}
+
+.hg__edge--done {
+  stroke: var(--hg-done);
+}
+
+.hg__edge--active {
+  stroke: var(--hg-active);
+  stroke-dasharray: 6 5;
+  animation: hg-flow 1s linear infinite;
+}
+
+.hg__edge--pending {
+  stroke: var(--hg-pending);
+  stroke-dasharray: 2 5;
+}
+
+.hg__edge--blocked {
+  stroke: var(--hg-blocked);
+}
+
+@keyframes hg-flow {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hg__edge--active {
+    animation: none;
+  }
+}
+
+.hg__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 6px 12px;
+  color: var(--muted);
+  font-size: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.hg__l::before {
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.hg__l--done::before {
+  background: var(--hg-done);
+}
+.hg__l--active::before {
+  background: var(--hg-active);
+}
+.hg__l--pending::before {
+  background: var(--hg-pending);
+}
+.hg__l--blocked::before {
+  background: var(--hg-blocked);
+}
+
+.hg__detail {
+  display: grid;
+  grid-template-columns: 1fr;
+  border-top: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.hg__detail > div {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.hg__detail > div:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 900px) {
+  .hg__detail {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .hg__detail > div {
+    border-bottom: 0;
+    border-right: 1px solid var(--hairline);
+  }
+
+  .hg__detail > div:last-child {
+    border-right: 0;
+  }
+}
+
+.goal .hg__g strong {
+  display: none;
+}
+
+.hg__detail h2 {
+  font-family: var(--pixel);
+  font-size: 7px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.hg__detail p {
+  margin: 0 0 6px;
+}
+
+.hg__pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+}
+
+.hg__s--done {
+  color: var(--hg-done);
+}
+.hg__s--active {
+  color: var(--hg-active);
+}
+.hg__s--pending {
+  color: var(--hg-pending);
+}
+.hg__s--blocked {
+  color: var(--hg-blocked);
+}
+
+.hg__hand {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hg__hand li {
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--hairline);
+}
+
+.hg__hand li:last-child {
+  border-bottom: 0;
+}
+
+.hg__dim {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ── HD-2D gym view ─────────────────────────────────────────────────────── */
 
 .gymscene {
   position: relative;
