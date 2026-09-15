@@ -5,7 +5,7 @@ effort: high
 # Grades, never builds. Reads the design docs and the backend, plus the eval
 # patterns in ECC and KooyaPedia through the read-only lookup wrappers.
 tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]
-add_dirs: ["/home/dominickooya/helloalex2/docs", "/home/dominickooya/helloalex2/apps/backend/server", "/mnt/c/Projects/HelloAlex-Norm/design"]
+add_dirs: ["/home/dominickooya/helloalex2/docs", "/home/dominickooya/helloalex2/apps/backend/server", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research"]
 allow: ["Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
 ---
 
