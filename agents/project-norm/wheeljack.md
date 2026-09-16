@@ -5,7 +5,7 @@ effort: high
 # Read-only over the backend and the console flow builder (folders with no .env
 # file), git history through git-read.sh, and Bland's docs on the web.
 tools: ["Read", "Glob", "Grep", "Bash", "WebFetch", "Write", "Edit"]
-add_dirs: ["/home/dominickooya/helloalex2/apps/backend/server", "/home/dominickooya/helloalex2/apps/console-frontend/src", "/home/dominickooya/helloalex2/packages", "/home/dominickooya/helloalex2/docs", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research"]
+add_dirs: ["/home/dominickooya/helloalex2/apps/backend/server", "/home/dominickooya/helloalex2/apps/console-frontend/src", "/home/dominickooya/helloalex2/packages", "/home/dominickooya/helloalex2/docs", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research", "/home/dominickooya/eva"]
 allow: ["Bash(bash /home/dominickooya/agora/scripts/git-read.sh:*)", "WebFetch(domain:docs.bland.ai)"]
 ---
 
