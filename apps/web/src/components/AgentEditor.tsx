@@ -149,6 +149,14 @@ export function AgentEditor({
 
   const slug = draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const fileId = editing ? agent.id : slug;
+  // Crew files live in their room's folder, so show where this one actually is
+  // rather than a path that assumes the old flat layout. A new agent has no
+  // room yet and is written to _shared/.
+  const filePath = editing
+    ? agent.file.replace(/^.*\/agents\//, "agents/")
+    : slug
+      ? `agents/_shared/${slug}.md`
+      : "";
 
   return (
     <div
@@ -164,7 +172,7 @@ export function AgentEditor({
           </span>
           {editing && (
             <span className="chip" style={{ marginLeft: 10 }}>
-              agents/{agent.id}.md
+              {filePath}
             </span>
           )}
         </div>
@@ -185,9 +193,9 @@ export function AgentEditor({
                 />
                 <span className="field__hint">
                   {editing
-                    ? `Renaming keeps the same file (agents/${agent.id}.md), so rooms
+                    ? `Renaming keeps the same file (${filePath}), so rooms
                        using this agent stay intact.`
-                    : `Writes ${slug ? `agents/${slug}.md` : "agents/<name>.md"}`}
+                    : `Writes ${filePath || "agents/_shared/<name>.md"}`}
                 </span>
               </div>
 
@@ -337,7 +345,7 @@ export function AgentEditor({
 
             <div>
               <div className="field__label" style={{ marginBottom: 6 }}>
-                {fileId ? `agents/${fileId}.md` : "File preview"}
+                {fileId ? filePath : "File preview"}
               </div>
               <pre className="preview">{markdown}</pre>
             </div>

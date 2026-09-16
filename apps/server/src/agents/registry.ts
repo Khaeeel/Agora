@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join, basename } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, basename, dirname } from "node:path";
 import { parse as parseYaml } from "yaml";
 import chokidar from "chokidar";
 import { toCursorModelId } from "../agent-models.ts";
@@ -96,6 +96,49 @@ export function parseAgentFile(path: string): Agent {
 /** Slug rule for anything an agent names: an id, a template, a room rules file. */
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,40}$/;
 
+/**
+ * How the roster is laid out on disk.
+ *
+ * One folder per chatroom — `agents/<room-slug>/<id>.md` — with the room's own
+ * facts beside its crew as `_room.md`. Agents that belong to more than one room
+ * live in `_shared/`, because an id names one file: copying a file to a second
+ * room would fork the agent and let the two halves drift.
+ *
+ * The flat `agents/<id>.md` layout this repo started with is STILL READ. An old
+ * checkout, a half-finished move and a file dropped in by hand all keep working;
+ * nothing is written flat any more. Folders are one level deep, no deeper —
+ * agent-edit.sh's guard depends on that.
+ *
+ * Dot-directories (`.backup-*`, `.archived-*`) are retired rosters, not crew,
+ * and are skipped everywhere here.
+ */
+const SHARED_DIR = "_shared";
+
+/** The room folders inside agents/, newest layout only. */
+function roomDirs(): string[] {
+  try {
+    return readdirSync(config.agentsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The file holding one agent, wherever it sits. A folder beats the flat file:
+ * during a move both exist for a moment, and the folder is the one being kept.
+ */
+export function agentFilePath(id: string): string | null {
+  for (const dir of roomDirs()) {
+    const nested = join(config.agentsDir, dir, `${id}.md`);
+    if (existsSync(nested)) return nested;
+  }
+  const flat = join(config.agentsDir, `${id}.md`);
+  return existsSync(flat) ? flat : null;
+}
+
 export function listTemplates(): string[] {
   try {
     return readdirSync(config.templatesDir)
@@ -134,6 +177,8 @@ export function forgeAgent(input: {
   role: string;
   brief: string;
   forgedBy: string;
+  /** The room that asked for it — the folder the file lands in. */
+  room?: string;
 }): Agent {
   const template = input.template.trim().toLowerCase();
   const id = input.id.trim().toLowerCase();
@@ -141,8 +186,12 @@ export function forgeAgent(input: {
   if (!SLUG.test(id)) throw new Error(`Bad agent id "${input.id}" — lowercase letters, digits and dashes`);
   const templatePath = join(config.templatesDir, `${template}.md`);
   if (!existsSync(templatePath)) throw new Error(`No template called "${template}"`);
-  const path = join(config.agentsDir, `${id}.md`);
-  if (existsSync(path)) throw new Error(`An agent called "${id}" already exists`);
+  if (agentFilePath(id)) throw new Error(`An agent called "${id}" already exists`);
+  // Forged into the room that asked for it, so the roster on disk reads the way
+  // the room does. Shared crew only when no room was named.
+  const dir = join(config.agentsDir, input.room?.trim() ? slugify(input.room) : SHARED_DIR);
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${id}.md`);
 
   const raw = readFileSync(templatePath, "utf8");
   const fm = raw.match(FRONTMATTER);
@@ -230,8 +279,8 @@ function rewriteAccess(
   agentId: string,
   compute: (current: Agent) => { tools: string[]; dirs: string[]; allow: string[] },
 ): Agent {
-  const path = join(config.agentsDir, `${agentId}.md`);
-  if (!existsSync(path)) throw new Error(`No agent called "${agentId}"`);
+  const path = agentFilePath(agentId);
+  if (!path) throw new Error(`No agent called "${agentId}"`);
   const raw = readFileSync(path, "utf8");
   const fm = raw.match(FRONTMATTER);
   if (!fm) throw new Error(`${agentId} has no frontmatter`);
@@ -273,8 +322,14 @@ function rewriteAccess(
 export function writeRoomRules(roomName: string, topic: string): string | null {
   const slug = slugify(roomName);
   if (!slug) return null;
-  const path = join(config.agentsDir, `_rules-${slug}.md`);
+  // A room that still keeps its rules in the flat file keeps them there: moving
+  // it silently would orphan whatever the mechanic has been editing.
+  const legacy = join(config.agentsDir, `_rules-${slug}.md`);
+  if (existsSync(legacy)) return legacy;
+  const dir = join(config.agentsDir, slug);
+  const path = join(dir, "_room.md");
   if (existsSync(path)) return path;
+  mkdirSync(dir, { recursive: true });
   writeFileSync(
     path,
     [`# ${roomName}`, "", topic.trim() ? `Purpose: ${topic.trim()}` : "Purpose: (fill in)", ""].join("\n"),
@@ -292,9 +347,10 @@ export function writeRoomRules(roomName: string, topic: string): string | null {
  * which is wrong the moment a second room exists.
  *
  * Keyed off the slugified room name, so `Voicemail Detection` reads
- * `_rules-voicemail-detection.md`. That keeps the file hand-editable and
- * greppable rather than naming it after a UUID, and needs no schema change.
- * The cost: RENAMING A ROOM SILENTLY ORPHANS ITS RULES FILE. Rename the file
+ * `voicemail-detection/_room.md`, next to that room's crew. That keeps the file
+ * hand-editable and greppable rather than naming it after a UUID, and needs no
+ * schema change. The flat `_rules-<slug>.md` is read as a fallback.
+ * The cost: RENAMING A ROOM SILENTLY ORPHANS ITS RULES FILE. Rename the folder
  * to match, or the room quietly loses its project context.
  *
  * Absent file = empty string, the normal case for a room that needs nothing
@@ -303,31 +359,64 @@ export function writeRoomRules(roomName: string, topic: string): string | null {
 export function loadRoomRules(roomName: string): string {
   const slug = slugify(roomName);
   if (!slug) return "";
-  try {
-    return readFileSync(join(config.agentsDir, `_rules-${slug}.md`), "utf8").trim();
-  } catch {
-    return "";
+  for (const path of [
+    join(config.agentsDir, slug, "_room.md"),
+    join(config.agentsDir, `_rules-${slug}.md`),
+  ]) {
+    try {
+      return readFileSync(path, "utf8").trim();
+    } catch {
+      /* try the older location */
+    }
   }
+  return "";
 }
 
 export function loadAgents(): Map<string, Agent> {
   const map = new Map<string, Agent>();
-  let files: string[];
+
+  /** Load every crew file in one directory. `_` names are rules, not members. */
+  const load = (dir: string, files: string[]): void => {
+    for (const f of files.filter((f) => f.endsWith(".md") && !f.startsWith("_")).sort()) {
+      const path = join(dir, f);
+      try {
+        const agent = parseAgentFile(path);
+        const seen = map.get(agent.id);
+        if (seen) {
+          // An id is how a room names its member, so two files claiming one id
+          // is a fork with a silent winner. Name both and keep the first.
+          console.error(
+            `[agents] duplicate id "${agent.id}": keeping ${seen.file}, ignoring ${path}`,
+          );
+          continue;
+        }
+        map.set(agent.id, agent);
+      } catch (err) {
+        console.error(`[agents] failed to parse ${path}:`, err);
+      }
+    }
+  };
+
+  let entries;
   try {
-    files = readdirSync(config.agentsDir).filter(
-      (f) => f.endsWith(".md") && !f.startsWith("_"),
-    );
+    entries = readdirSync(config.agentsDir, { withFileTypes: true });
   } catch {
     return map;
   }
-  for (const f of files.sort()) {
+  // Room folders first, so a folder wins over a stale flat file left behind by
+  // an interrupted move — the same precedence agentFilePath uses.
+  for (const dir of entries.filter((e) => e.isDirectory() && !e.name.startsWith("."))) {
+    const full = join(config.agentsDir, dir.name);
     try {
-      const agent = parseAgentFile(join(config.agentsDir, f));
-      map.set(agent.id, agent);
+      load(full, readdirSync(full));
     } catch (err) {
-      console.error(`[agents] failed to parse ${f}:`, err);
+      console.error(`[agents] cannot read ${full}:`, err);
     }
   }
+  load(
+    config.agentsDir,
+    entries.filter((e) => e.isFile()).map((e) => e.name),
+  );
   return map;
 }
 
@@ -400,20 +489,28 @@ export function slugify(name: string): string {
 export function writeAgentFile(
   a: Parameters<typeof renderAgentFile>[0],
   existingId?: string,
+  room?: string,
 ): string {
   const id = existingId ?? slugify(a.name);
   if (!id) throw new Error("Agent name must contain at least one letter or number");
-  const path = join(config.agentsDir, `${id}.md`);
-  if (!existingId && existsSync(path)) {
+  const current = agentFilePath(id);
+  if (!existingId && current) {
     throw new Error(`An agent called "${id}" already exists`);
   }
-  writeFileSync(path, renderAgentFile(a), "utf8");
+  // An edit rewrites the file where it already sits, so saving an agent never
+  // moves it between rooms. A new one joins the room that asked for it, and
+  // shared crew when nothing did.
+  const dir = current
+    ? dirname(current)
+    : join(config.agentsDir, room?.trim() ? slugify(room) : SHARED_DIR);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${id}.md`), renderAgentFile(a), "utf8");
   return id;
 }
 
 export function deleteAgentFile(id: string): void {
-  const path = join(config.agentsDir, `${slugify(id)}.md`);
-  if (!existsSync(path)) throw new Error(`No agent called "${id}"`);
+  const path = agentFilePath(slugify(id));
+  if (!path) throw new Error(`No agent called "${id}"`);
   rmSync(path);
 }
 
@@ -424,6 +521,11 @@ export function deleteAgentFile(id: string): void {
 export function watchAgents(onChange: (agents: Map<string, Agent>) => void): () => void {
   const watcher = chokidar.watch(config.agentsDir, {
     ignoreInitial: true,
+    // Retired rosters live in dot-dirs beside the live crew. Watching them
+    // would put deleted agents back on the roster the moment one is restored.
+    ignored: (path: string) => basename(path).startsWith("."),
+    // agents/ and one folder per room. Nothing legitimate sits deeper.
+    depth: 2,
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
   });
   const reload = () => onChange(loadAgents());

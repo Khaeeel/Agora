@@ -8,8 +8,8 @@
  * the way a second awk implementation would.
  *
  * What it guarantees before a single byte is written, in order:
- *   1. the path is a real file directly inside agents/, not a symlink, not a
- *      template, not the dead house-rules file;
+ *   1. the path is a real file inside agents/ — its room folder at the deepest,
+ *      never further — not a symlink, not a template, not the house-rules stub;
  *   2. only `instructions` or `personality` changes (or a rules file body);
  *   3. the frontmatter bytes, the set of `## ` headings, and the parsed name,
  *      role and description are identical before and after;
@@ -26,7 +26,7 @@ import { basename, join, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { config } from "../config.ts";
-import { parseAgentFile, sections } from "../agents/registry.ts";
+import { agentFilePath, parseAgentFile, sections } from "../agents/registry.ts";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -63,15 +63,21 @@ if (!cmd) usage();
 // ---- path resolution ----------------------------------------------------
 const agentsDir = realpathSync(config.agentsDir);
 
+/**
+ * Inside agents/, at most one folder deep: `agents/<id>.md` (the older flat
+ * layout) or `agents/<room>/<id>.md`. The depth cap is what keeps this a prompt
+ * editor — a path that climbs out, or burrows in, is refused before any read.
+ */
 function insideAgents(path: string): boolean {
   const real = realpathSync(path);
-  return real.startsWith(agentsDir + sep) && !relative(agentsDir, real).includes(sep);
+  if (!real.startsWith(agentsDir + sep)) return false;
+  return relative(agentsDir, real).split(sep).length <= 2;
 }
 
 function agentPath(id: string): string {
   if (!SLUG.test(id)) refuse(`bad agent id "${id}"`);
-  const path = join(config.agentsDir, `${id}.md`);
-  if (!existsSync(path)) refuse(`no agent called "${id}"`);
+  const path = agentFilePath(id);
+  if (!path) refuse(`no agent called "${id}"`);
   if (lstatSync(path).isSymbolicLink()) refuse(`"${id}" is a symlink`);
   if (!insideAgents(path)) refuse(`"${id}" resolves outside agents/`);
   return path;
@@ -79,8 +85,11 @@ function agentPath(id: string): string {
 
 function rulesPath(slug: string): string {
   if (!SLUG.test(slug)) refuse(`bad room slug "${slug}"`);
-  const path = join(config.agentsDir, `_rules-${slug}.md`);
-  if (!existsSync(path)) refuse(`no rules file for room "${slug}" — a room writes its own on creation`);
+  const path = [
+    join(config.agentsDir, slug, "_room.md"),
+    join(config.agentsDir, `_rules-${slug}.md`),
+  ].find((p) => existsSync(p));
+  if (!path) refuse(`no rules file for room "${slug}" — a room writes its own on creation`);
   if (lstatSync(path).isSymbolicLink()) refuse(`rules file for "${slug}" is a symlink`);
   if (!insideAgents(path)) refuse("rules file resolves outside agents/");
   return path;

@@ -1567,7 +1567,7 @@ export class Orchestrator {
 
     let agent: Agent;
     try {
-      agent = forgeAgent({ ...request, forgedBy: orchestrator.id });
+      agent = forgeAgent({ ...request, forgedBy: orchestrator.id, room: room.name });
     } catch (err) {
       return refuse(err instanceof Error ? err.message : String(err));
     }

@@ -33,7 +33,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, appendFileSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, writeFileSync, readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -74,13 +74,32 @@ const refsOf = (text) => parseMarkers(String(text ?? "")).refs;
 const minutes = (a, b) => Math.max(0, Math.round((b - a) / 60000));
 
 // ── grants at a point in time, from git ────────────────────────────────────
+/**
+ * Where an agent's file sits today: `agents/<room>/<id>.md`, or the flat
+ * `agents/<id>.md` the repo used before rooms had folders.
+ */
+function agentPathNow(agentId) {
+  for (const e of readdirSync(join(ROOT, "agents"), { withFileTypes: true })) {
+    if (!e.isDirectory() || e.name.startsWith(".")) continue;
+    if (existsSync(join(ROOT, "agents", e.name, `${agentId}.md`))) return `agents/${e.name}/${agentId}.md`;
+  }
+  return `agents/${agentId}.md`;
+}
 const grantCache = new Map();
 function grantHistory(agentId) {
   if (grantCache.has(agentId)) return grantCache.get(agentId);
   const hist = [];
-  for (const line of git(["log", "--format=%H %ct", "--", `agents/${agentId}.md`]).trim().split("\n").filter(Boolean)) {
-    const [sha, ct] = line.split(" ");
-    const src = git(["show", `${sha}:agents/${agentId}.md`]);
+  // --follow crosses the move into per-room folders, and --name-only says which
+  // path each commit actually holds, so `git show <sha>:<path>` cannot ask for a
+  // path that did not exist yet. Without this every grant reads as "no history"
+  // the moment a file moves, and every turn scores against null grants.
+  const log = git(["log", "--follow", "--format=%x00%H %ct", "--name-only", "--", agentPathNow(agentId)]);
+  for (const block of log.split("\0").filter((b) => b.trim())) {
+    const [head, ...rest] = block.trim().split("\n");
+    const [sha, ct] = head.split(" ");
+    const path = rest.map((l) => l.trim()).filter(Boolean).pop();
+    if (!sha || !path) continue;
+    const src = git(["show", `${sha}:${path}`]);
     if (src) hist.push({ at: Number(ct) * 1000, grants: parseFrontmatter(src) });
   }
   hist.sort((a, b) => a.at - b.at);
@@ -393,7 +412,9 @@ for (const line of git(["log", "--format=%H %ct %s", "--grep=^forge("]).trim().s
   const [, sha, ct, id, template, by] = m;
   const at = Number(ct) * 1000;
   if (at < SINCE) continue;
-  const agentSrc = git(["show", `${sha}:agents/${id}.md`]);
+  // A forge commit names the file it wrote; read it at whatever path it had then.
+  const forgedPath = git(["show", "--format=", "--name-only", sha]).split("\n").map((l) => l.trim()).find((l) => l.endsWith(`/${id}.md`) || l === `agents/${id}.md`);
+  const agentSrc = forgedPath ? git(["show", `${sha}:${forgedPath}`]) : "";
   const tplSrc = git(["show", `${sha}:templates/agents/${template}.md`]);
   const name = sectionOf(agentSrc, "Name").split("\n")[0]?.trim() ?? id;
   const ev = forgeEvents

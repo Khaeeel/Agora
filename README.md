@@ -37,8 +37,8 @@ How an agent thinks is layered. Lower layers may add; none may subtract from L0.
 |---|---|---|
 | **L0 Protocol** | How every agent reads/writes a room, honesty, grants, escalation, WhatsApp, local services | `apps/server/src/protocol.ts` — **code**, `PROTOCOL_VERSION = 5` |
 | **L1 Grant** | Tools, dirs, allowlists | Agent frontmatter; only Dominic (or room Allow buttons) can change |
-| **L2 Room** | Project facts for one room | `agents/_rules-<room-slug>.md` |
-| **L3 Role** | Who this agent is | Body of `agents/<id>.md` |
+| **L2 Room** | Project facts for one room | `agents/<room-slug>/_room.md` |
+| **L3 Role** | Who this agent is | Body of `agents/<room-slug>/<id>.md` |
 | **L4 Skills** | Optional capability packs | `skills/<name>/` |
 | **L5 Memory** | Mind stone + transcript | SQLite |
 
@@ -90,7 +90,8 @@ normal IDE use.
 |---|---|
 | `apps/server/` | Harness: orchestrator, protocol, registry, drivers, DB, notify |
 | `apps/web/` | Vite/React control plane |
-| `agents/` | Live agent markdown + per-room `_rules-*` |
+| `agents/<room>/` | One folder per chatroom: its crew, and `_room.md` beside them |
+| `agents/_shared/` | Crew that belongs to more than one room |
 | `templates/agents/` | Forgeable capability bundles |
 | `scripts/` | Wrappers (KooyaPedia, erasr, eval, WhatsApp relay, Chrome CDP) |
 | `skills/` | Optional L4 skill packs |
@@ -109,8 +110,8 @@ normal IDE use.
   JSON schema validation; per-agent `--tools` / `--allowedTools`.
 - **Hybrid** — agent prose on Cursor; planning / deciding / compacting on Claude.
 
-Editing `agents/*.md` on disk also works: the watcher reloads the roster without
-a restart.
+Editing an agent's `.md` on disk also works: the watcher reloads the roster
+without a restart.
 
 ### Local services (KooyaPedia pattern)
 
@@ -129,9 +130,27 @@ pnpm dev                  # server on :8787, web on :5183
 
 ## Agents
 
-One markdown file per agent in `agents/`. The file is the source of truth: the
-Create Agent form in the UI writes exactly this format, and a file watcher
-reloads the roster when you edit one by hand.
+One markdown file per agent, in its room's folder. The file is the source of
+truth: the Create Agent form in the UI writes exactly this format, and a file
+watcher reloads the roster when you edit one by hand.
+
+```
+agents/
+  trunks/            one folder per chatroom
+    _room.md         L2 — what this room is about
+    n0tail.md        …its crew, one file each
+  project-norm/
+    _room.md
+    megan-fox.md
+  _shared/           crew that belongs to more than one room
+    fury.md
+```
+
+An id names exactly one file, so an agent in two rooms lives in `_shared/`
+rather than being copied — two copies would drift. Folders are one level deep:
+`agent-edit.sh`, the mechanics' only write path, refuses anything deeper. The
+older flat `agents/<id>.md` is still read, so an old checkout or a file dropped
+in by hand keeps working; nothing is written flat any more.
 
 ```markdown
 ---
