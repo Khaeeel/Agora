@@ -209,6 +209,28 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .amsg{margin-left:auto;opacity:0;color:var(--faint);width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none}
 .arow:hover .amsg{opacity:1}
 .amsg:hover{background:rgba(255,255,255,.07);color:#fff}
+/* Row actions: Message stays inline; Edit and Remove open under the row, with
+   Remove below a rule and a confirm step, since the room has no add-back yet. */
+.aacts{margin-left:auto;display:flex;align-items:center;gap:2px;flex:none}
+.aacts .amsg{margin-left:0}
+.amsg:focus-visible,.amsg[aria-expanded="true"]{opacity:1}
+.amsg:focus-visible,.mav:focus-visible,.amenu button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.amenu{margin:2px 7px 8px 44px;padding:4px;border:1px solid var(--line2);border-radius:9px;background:var(--surface)}
+.amenu__item{display:block;width:100%;text-align:left;padding:6px 9px;border-radius:6px;font-family:var(--ui);font-size:12.5px;color:var(--text)}
+.amenu__item:hover:not(:disabled){background:var(--raised)}
+.amenu__item--danger{color:var(--danger)}
+.amenu__item--danger:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 14%,transparent)}
+.amenu__item:disabled{cursor:not-allowed;opacity:.6}
+.amenu__why{display:block;margin-top:1px;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.amenu__rule{border:0;border-top:1px solid var(--line);margin:4px 2px}
+.amenu__ask{margin:4px 6px 8px;font-size:12px;line-height:1.45;color:var(--dim)}
+.amenu__ask b{color:var(--text);font-weight:600}
+.amenu__acts{display:flex;justify-content:flex-end;gap:6px;padding:0 2px 2px}
+.amenu__btn{padding:5px 11px;border-radius:7px;border:1px solid var(--line2);font-family:var(--ui);font-size:12px;font-weight:600;color:var(--text)}
+.amenu__btn:hover:not(:disabled){background:var(--raised)}
+.amenu__btn--danger{background:var(--danger);border-color:var(--danger);color:var(--danger-ink)}
+.amenu__btn--danger:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 88%,var(--text))}
+.amenu__btn:disabled{opacity:.6;cursor:progress}
 .sblock{border-bottom:1px solid var(--line);padding:12px 14px}
 .slabel{font-family:var(--ui);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--faint);margin-bottom:9px;display:flex;align-items:center}
 .newroom{margin:10px 14px 14px;padding:9px;border-radius:9px;background:var(--accent);color:#fff;font-family:var(--ui);font-weight:600;font-size:13px;width:calc(100% - 28px)}

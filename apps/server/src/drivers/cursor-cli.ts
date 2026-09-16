@@ -40,8 +40,14 @@ import type { AgentDriver, DriverEvent, DriverRequest } from "./types.ts";
  * `--mode` IS per-invocation and IS enforced by the CLI, so the roles that must
  * never write are pinned by flag rather than by trust:
  *   no tools at all            -> `--mode ask`  (Q&A, read-only)
- *   only read-shaped tools     -> `--mode plan` (analyse, propose, no edits)
+ *   only read-shaped tools     -> `--mode ask`, plus their --add-dir roots
  *   any exec/write tool        -> default mode, governed by the global config
+ * Not `--mode plan`, although it is read-only too: on a real task plan mode puts
+ * the deliverable inside a createPlan tool call and leaves the reply text as
+ * narration ("Delivering the design and gap table…"), so the room only ever sees
+ * the narration. That cost Optimus 10 turns in Project Norm (#21–#62) and was
+ * reproduced on 2026-09-15; ask mode returned the same answer as text. Web tools
+ * are decided by the global config in both modes, so nothing is lost.
  * That keeps Ceb, Gaben and Topson genuinely unable to edit — the property room
  * rule 6 depends on — while the engine-door holders still work. It does NOT
  * reproduce per-agent Shell() scoping: in default mode every such agent shares
@@ -94,7 +100,7 @@ export class CursorCliDriver implements AgentDriver {
     if (req.tools.length === 0) {
       args.push("--mode", "ask");
     } else if (isReadOnly(req.tools)) {
-      args.push("--mode", "plan");
+      args.push("--mode", "ask");
       for (const dir of req.addDirs) args.push("--add-dir", dir);
     } else {
       // Default (full) mode. Permissions come from the global config; nothing

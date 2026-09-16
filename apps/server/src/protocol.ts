@@ -253,6 +253,47 @@ export function bodyWords(text: string, maxCodeLines = 20): number {
   return codeLines > maxCodeLines ? words + codeLines : words;
 }
 
+/**
+ * Rule: a reply starts at its marker.
+ *
+ * The one way replies most often break the marker contract: text the model
+ * streamed before its first tool call ("Checking exp047 status now.") is
+ * concatenated in front of the real message, and the newlines between blocks
+ * are lost, so `kind:` lands mid-line after the narration and `@next:` is glued
+ * onto the end of a sentence. parseMarkers then misses the act, the length
+ * guard counts the narration and pays for a rewrite, and the narration reaches
+ * the room and WhatsApp. Measured by scripts/harness-eval.mjs (MarkersNotGlued):
+ * 20 of 188 responder turns over 7 days, on both drivers.
+ *
+ * Deterministic and conservative. It acts only when a `kind: <act>` marker
+ * exists and is not already the first line; it keeps everything from the marker
+ * on; it only moves markers onto their own lines. A reply that already meets
+ * the contract comes back byte-identical. What it drops is returned so the
+ * caller can log it.
+ */
+export function normalizeReply(text: string): { text: string; dropped: string; changed: boolean } {
+  const acts = (ACTS as readonly string[]).join("|");
+  const marker = new RegExp(`kind:[ \\t]*(${acts})\\b`, "i");
+  const found = marker.exec(text);
+  if (!found) return { text, dropped: "", changed: false };
+
+  const firstLine = text.split(/\r?\n/).find((l) => l.trim())?.trim() ?? "";
+  const cleanFirst = new RegExp(`^kind:\\s*(${acts})\\s*$`, "i").test(firstLine);
+
+  let out = text;
+  let dropped = "";
+  if (!cleanFirst) {
+    dropped = text.slice(0, found.index).trim();
+    out = text.slice(found.index);
+    // "kind: result Dominic, [#1] ..." -> the marker alone on the first line.
+    out = out.replace(new RegExp(`^kind:[ \\t]*(${acts})[ \\t]*(?=\\S)`, "i"), (_m, act: string) => `kind: ${act.toLowerCase()}\n`);
+  }
+  // "... the rest. @next: rene" -> @next alone on the last line.
+  out = out.replace(/([^\n])[ \t]*(@next:[ \t]*[a-z0-9_-]+)[ \t]*$/i, "$1\n$2");
+
+  return out === text ? { text, dropped: "", changed: false } : { text: out, dropped, changed: true };
+}
+
 /** The word budget for a given act. */
 export function wordLimitFor(act: SpeechAct | null): number {
   return act === "result" ? REPLY_LIMITS.result : REPLY_LIMITS.short;

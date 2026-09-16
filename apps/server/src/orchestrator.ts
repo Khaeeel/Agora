@@ -238,8 +238,7 @@ import {
   REPLY_LIMITS,
   bodyWords,
   parseMarkers,
-  wordLimitFor,
-} from "./protocol.ts";
+  wordLimitFor, normalizeReply } from "./protocol.ts";
 import { ClaudeCliDriver } from "./drivers/claude-cli.ts";
 import { CursorCliDriver } from "./drivers/cursor-cli.ts";
 import { levelForRoom, notify, type NotifyKind } from "./notify.ts";
@@ -2071,6 +2070,25 @@ export class Orchestrator {
           structured = event.structured;
           costUsd = event.costUsd;
           isError = event.isError;
+        }
+      }
+      // Rule: a reply starts at its marker (normalizeReply in protocol.ts).
+      // Applied once, here, so the length guard measures the real reply and
+      // every path that posts a turn gets the same text. Structured turns are
+      // JSON and are left alone.
+      if (!opts.schema && text) {
+        const fixed = normalizeReply(text);
+        if (fixed.changed) {
+          console.log(
+            JSON.stringify({
+              event: "normalized",
+              room: opts.roomId,
+              agent: opts.agent.id,
+              droppedChars: fixed.dropped.length,
+              dropped: fixed.dropped.slice(0, 300),
+            }),
+          );
+          text = fixed.text;
         }
       }
       return {

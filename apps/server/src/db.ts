@@ -321,6 +321,22 @@ export function setRoomMembers(roomId: string, members: string[]): Room | null {
   return getRoom(roomId);
 }
 
+/**
+ * Take one agent out of a room, naming who directs it afterwards. One write,
+ * so the room is never left pointing at an orchestrator that is not a member.
+ */
+export function removeRoomMember(roomId: string, agentId: string, orchestratorId: string): Room | null {
+  const room = getRoom(roomId);
+  if (!room) return null;
+  const members = room.members.filter((m) => m !== agentId);
+  db.prepare(`UPDATE rooms SET members = ?, orchestrator_id = ? WHERE id = ?`).run(
+    JSON.stringify(members),
+    orchestratorId,
+    roomId,
+  );
+  return getRoom(roomId);
+}
+
 export function listMessages(roomId: string, limit = 500): Message[] {
   const rows = db
     .prepare(

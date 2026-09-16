@@ -12,6 +12,7 @@ import {
   listGoals,
   listMessages,
   listRooms,
+  removeRoomMember,
   setRoomMembers,
 } from "./db.ts";
 import {
@@ -258,6 +259,45 @@ export async function buildServer(): Promise<
       const wanted = (req.body?.members ?? []).filter((m) => agents.has(m));
       if (!wanted.includes(room.orchestratorId)) wanted.unshift(room.orchestratorId);
       const updated = setRoomMembers(room.id, [...new Set(wanted)]);
+      broadcast({ type: "rooms", rooms: listRooms() });
+      return { room: updated };
+    },
+  );
+
+  /**
+   * Take one agent out of a room. Refused mid-run, since the loop may be about
+   * to hand it a turn, and refused for the last member. Removing the agent that
+   * directs the room hands it to the next member allowed to direct one. The
+   * agent's messages stay in the transcript; only the roster changes.
+   */
+  app.delete<{ Params: { id: string; agentId: string } }>(
+    "/api/rooms/:id/members/:agentId",
+    async (req, reply) => {
+      const room = listRooms().find((r) => r.id === req.params.id);
+      if (!room) return reply.code(404).send({ error: "No such room" });
+      const { agentId } = req.params;
+      const name = agents.get(agentId)?.name ?? agentId;
+      if (!room.members.includes(agentId)) {
+        return reply.code(404).send({ error: `${name} is not in ${room.name}.` });
+      }
+      if (orchestrator.getState(room.id)?.active) {
+        return reply.code(400).send({ error: `Stop the run in ${room.name} before removing ${name}.` });
+      }
+      const rest = room.members.filter((m) => m !== agentId);
+      if (rest.length === 0) {
+        return reply.code(400).send({ error: `${name} is the only agent in ${room.name}.` });
+      }
+      let director = room.orchestratorId;
+      if (director === agentId) {
+        const next = rest.find((m) => agents.get(m)?.orchestrator);
+        if (!next) {
+          return reply.code(400).send({
+            error: `${name} directs ${room.name} and no other member can. Add an agent that can direct rooms first.`,
+          });
+        }
+        director = next;
+      }
+      const updated = removeRoomMember(room.id, agentId, director);
       broadcast({ type: "rooms", rooms: listRooms() });
       return { room: updated };
     },

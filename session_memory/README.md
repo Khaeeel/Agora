@@ -10,6 +10,8 @@ One file per working session, named `YYYY-MM-DD-session.md`. Newest last.
 | [2026-08-28-session.md](2026-08-28-session.md) | Auto-resume and the false-blocker guard, honest step reporting, agent discussions, clickable decisions, the mind stone, the Trunks room and its `erasr` wrappers, the WhatsApp bridge both ways, and the wrapper security hole found and closed. |
 | [2026-09-11-session.md](2026-09-11-session.md) | HelloAlex on `development` tip `84ac6db93`: Call Details voice naming (UUID/Default → real names, Bland Get Voice + harden), Phone Numbers Analytics kept when rotation is off (hide Rotation tab/charts only; Analytics before Archived), Batch Call draft TDZ, empty area-code buy copy, rotation autofill/hide picker; Stephen `6cbd8d9ff` under tip; ask-before-push and no Billing/live-call process rules. |
 
+| [2026-09-15-session.md](2026-09-15-session.md) | Project Norm: Phase 0 results, Dominic's decisions (build our own Norm from scratch, Cursor as the brain for now, no Bland Norm even as a teacher), and why Optimus stalled for 10 turns. |
+
 ## What belongs in one of these
 
 - **The runbook** — how to start each service, and the traps that waste an hour.

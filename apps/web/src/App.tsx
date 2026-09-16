@@ -41,6 +41,7 @@ export function App() {
   const {
     state,
     openDm,
+    removeMember,
     broadcast,
     stop,
     resume,
@@ -237,9 +238,11 @@ export function App() {
         agents={agentMap}
         statuses={state.statuses}
         memory={state.memory}
+        busy={busy}
         onNewRoom={() => setShowRoom(true)}
         onEditAgent={(a) => setAgentModal(a)}
         onMessage={(a) => void openThread(a)}
+        onRemove={(a) => (room ? removeMember(room.id, a.id) : Promise.resolve(false))}
         mindStone={state.mindStone}
         compacting={state.run?.phase === "compacting"}
       />

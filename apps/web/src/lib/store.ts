@@ -407,9 +407,36 @@ export function useAgora(roomId: string | null) {
     }));
   }, []);
 
+  /**
+   * Take one agent out of a room. The server decides whether that is allowed —
+   * a refusal (mid-run, last member, no one left to direct) lands in the error
+   * banner rather than failing silently.
+   */
+  const removeMember = useCallback(async (targetRoomId: string, agentId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(
+        `/api/rooms/${encodeURIComponent(targetRoomId)}/members/${encodeURIComponent(agentId)}`,
+        { method: "DELETE" },
+      );
+      const data = (await res.json().catch(() => ({}))) as { room?: Room; error?: string };
+      if (!res.ok || !data.room) {
+        setState((s) => ({ ...s, error: data.error ?? `Could not remove ${agentId} (HTTP ${res.status}).` }));
+        return false;
+      }
+      const updated = data.room;
+      setState((s) => ({ ...s, rooms: s.rooms.map((r) => (r.id === updated.id ? updated : r)) }));
+      return true;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      setState((s) => ({ ...s, error: `Could not remove ${agentId}: ${detail}` }));
+      return false;
+    }
+  }, []);
+
   return {
     state,
     openDm,
+    removeMember,
     broadcast,
     stop,
     resume,
