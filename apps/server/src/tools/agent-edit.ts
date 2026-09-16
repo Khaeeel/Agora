@@ -242,7 +242,9 @@ switch (cmd) {
   case "log": {
     if (!a1) usage();
     const rel = relative(config.root, agentPath(a1));
-    process.stdout.write(git(["log", "--date=short", "--format=%h %ad %an  %s", "-n", "10", "--", rel]) || "(no history)\n");
+    // --follow: agent files moved into per-room folders, and a plain log stops
+    // dead at the rename, so the mechanic would see the move and nothing before it.
+    process.stdout.write(git(["log", "--follow", "--date=short", "--format=%h %ad %an  %s", "-n", "10", "--", rel]) || "(no history)\n");
     break;
   }
   case "preview":
@@ -308,7 +310,9 @@ switch (cmd) {
   case "undo": {
     if (!a1) usage();
     const rel = relative(config.root, agentPath(a1));
-    const last = git(["log", "--format=%H %s", "--grep", `^Agora-Edit: [a-z0-9-]* ${a1} `, "-n", "1", "--", rel]).trim();
+    // --follow for the same reason as `log`: without it the last edit of an
+    // agent that predates the move is invisible, and undo reports nothing to undo.
+    const last = git(["log", "--follow", "--format=%H %s", "--grep", `^Agora-Edit: [a-z0-9-]* ${a1} `, "-n", "1", "--", rel]).trim();
     if (!last) refuse(`no agent edit of "${a1}" to undo — snapshots and manual commits are not reverted here`);
     const [hash, ...subject] = last.split(" ");
     try {
