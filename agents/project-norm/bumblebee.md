@@ -5,7 +5,7 @@ effort: medium
 # Researcher grants only: the web plus the two read-only lookup wrappers. No repo
 # access — questions about what HelloAlex already stores go to Ratchet.
 tools: ["WebSearch", "WebFetch", "Bash", "Read", "Glob", "Grep", "Write", "Edit"]
-add_dirs: ["/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research"]
+add_dirs: ["/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research", "/home/dominickooya/eva"]
 allow: ["WebSearch", "WebFetch(domain:*)", "Bash(bash /home/dominickooya/agora/scripts/ecc-lookup.sh:*)", "Bash(bash /home/dominickooya/agora/scripts/kooyapedia-lookup.sh:*)"]
 ---
 
