@@ -5,7 +5,7 @@ effort: high
 # DELIBERATELY READ-ONLY. Ironhide audits what the others design; an auditor who
 # can change the thing under audit is not an auditor. No web, no writes.
 tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]
-add_dirs: ["/home/dominickooya/helloalex2/apps/backend/server", "/home/dominickooya/helloalex2/packages", "/home/dominickooya/helloalex2/docs", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research"]
+add_dirs: ["/home/dominickooya/helloalex2/apps/backend/server", "/home/dominickooya/helloalex2/packages", "/home/dominickooya/helloalex2/docs", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research", "/home/dominickooya/eva"]
 allow: ["Bash(bash /home/dominickooya/agora/scripts/git-read.sh:*)"]
 ---
 

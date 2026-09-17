@@ -6,7 +6,7 @@ effort: high
 # because none of them holds a .env file, plus the web for Bland and Claude docs.
 # No Bash, no writes.
 tools: ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Write", "Edit"]
-add_dirs: ["/home/dominickooya/helloalex2/apps/backend/server", "/home/dominickooya/helloalex2/packages", "/home/dominickooya/helloalex2/docs", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research"]
+add_dirs: ["/home/dominickooya/helloalex2/apps/backend/server", "/home/dominickooya/helloalex2/packages", "/home/dominickooya/helloalex2/docs", "/mnt/c/Projects/HelloAlex-Norm/design", "/mnt/c/Projects/HelloAlex-Norm/research", "/home/dominickooya/eva"]
 allow: ["WebSearch", "WebFetch(domain:*)"]
 ---
 
