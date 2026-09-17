@@ -11,6 +11,7 @@ One file per working session, named `YYYY-MM-DD-session.md`. Newest last.
 | [2026-09-11-session.md](2026-09-11-session.md) | HelloAlex on `development` tip `84ac6db93`: Call Details voice naming (UUID/Default → real names, Bland Get Voice + harden), Phone Numbers Analytics kept when rotation is off (hide Rotation tab/charts only; Analytics before Archived), Batch Call draft TDZ, empty area-code buy copy, rotation autofill/hide picker; Stephen `6cbd8d9ff` under tip; ask-before-push and no Billing/live-call process rules. |
 | [2026-09-15-session.md](2026-09-15-session.md) | Project Norm: Phase 0 results, Dominic's decisions (build our own Norm from scratch, Cursor as the brain for now, no Bland Norm even as a teacher), and why Optimus stalled for 10 turns. |
 | [2026-09-16-session.md](2026-09-16-session.md) | Repo layout: one folder per chatroom under `agents/`, `_shared/` for crew in two rooms, why the `scripts/` wrappers deliberately did not move, and the three traps a file move sets — `--follow` is invisible until the rename is committed, `git show <sha>:<path>` fails silently, and `agent-edit.sh log`/`undo` stop dead at a rename. |
+| [2026-09-17-session.md](2026-09-17-session.md) | Erasr and Eval rooms deleted permanently (176 messages), why it took hand-written SQL — Agora has no delete-room feature and the schema has no cascade — where the backup is, and why `_shared/` is gone. |
 
 ## What belongs in one of these
 
