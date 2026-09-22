@@ -30,3 +30,8 @@ data/
 .archived-*/
 __pycache__/
 *.tsbuildinfo
+
+# Agents and rooms are this install's own — they are not part of the app. A clone
+# starts with an empty roster and forges its crew from templates/agents/.
+agents/*
+!agents/.gitkeep

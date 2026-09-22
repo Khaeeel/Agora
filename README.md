@@ -146,6 +146,10 @@ agents/
     fury.md
 ```
 
+ is git-ignored: a fresh clone has no crew and no rooms. Create agents
+with the UI form or  from , then make a
+room in the UI. The server boots with an empty roster and only warns.
+
 An id names exactly one file, so an agent in two rooms lives in `_shared/`
 rather than being copied — two copies would drift. Folders are one level deep:
 `agent-edit.sh`, the mechanics' only write path, refuses anything deeper. The
