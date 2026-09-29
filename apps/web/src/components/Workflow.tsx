@@ -72,6 +72,57 @@ function GoalDial({
   );
 }
 
+/**
+ * The contract and, once a verifier has run, its verdicts. Same block style as
+ * the manual verify steps: this is the part of the card the harness can vouch
+ * for, so it reads as a checklist rather than prose.
+ */
+function Contract({ goal, agents }: { goal: Goal; agents: Map<string, Agent> }) {
+  const checks = goal.doneWhen ?? [];
+  if (checks.length === 0) return null;
+  const v = goal.verification ?? null;
+  const verifier = v ? (agents.get(v.verifierId)?.name ?? v.verifierId) : null;
+  const passed = v ? v.checks.filter((c) => c.verdict === "pass").length : 0;
+  const approvals = [...new Set([...(goal.approvals ?? []), ...(v?.approvals ?? [])])];
+  const constraints = goal.constraints ?? [];
+  const risks = v?.risks ?? [];
+  return (
+    <div className="verify">
+      <div className="verify__label">
+        {v ? `${v.passed ? "Verified" : "Not verified"} — ${passed} of ${checks.length} by ${verifier}` : "Done when"}
+      </div>
+      <ol className="verify__body" style={{ paddingLeft: 18, margin: 0 }}>
+        {checks.map((c, i) => {
+          const r = v?.checks.find((x) => x.index === i) ?? null;
+          const mark = !r ? "○" : r.verdict === "pass" ? "✓" : r.verdict === "fail" ? "✗" : "?";
+          return (
+            <li key={i} title={r ? r.evidence : c.how}>
+              <span aria-hidden="true">{mark} </span>
+              {c.text}
+              <span style={{ opacity: 0.7 }}> — {r ? r.evidence || r.verdict : c.how}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {constraints.length > 0 && (
+        <p className="verify__body" style={{ marginTop: 8 }}>
+          Must not: {constraints.join(" · ")}
+        </p>
+      )}
+      {risks.length > 0 && (
+        <p className="verify__body" style={{ marginTop: 8 }}>
+          Risks: {risks.join(" · ")}
+        </p>
+      )}
+      {approvals.length > 0 && (
+        <p className="verify__body" style={{ marginTop: 8 }}>
+          Needs your go: {approvals.join(" · ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Handoff({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -193,6 +244,8 @@ function GoalCard({
           statuses={statuses}
         />
       ) : null}
+
+      <Contract goal={goal} agents={agents} />
 
       {goal.verify && (
         <div className="verify">

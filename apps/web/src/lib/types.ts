@@ -93,9 +93,30 @@ export interface Step {
   ownerId: string | null;
   status: StepStatus;
   note: string | null;
+  /** What ran or was seen that shows the step is done. */
+  evidence?: string | null;
   updatedAt: number;
   /** Steps this one waits for; empty = can start at once. */
   dependsOn?: number[];
+}
+
+export type CheckVerdict = "pass" | "fail" | "unverified";
+export interface DoneCheck {
+  text: string;
+  how: string;
+}
+export interface CheckResult {
+  index: number;
+  verdict: CheckVerdict;
+  evidence: string;
+}
+export interface Verification {
+  verifierId: string;
+  at: number;
+  passed: boolean;
+  checks: CheckResult[];
+  risks: string[];
+  approvals: string[];
 }
 
 export interface Goal {
@@ -110,6 +131,12 @@ export interface Goal {
   handoff: string | null;
   /** Manual steps to see the problem first-hand. */
   verify: string | null;
+  /** The contract: conditions that must all hold. Empty on older goals. */
+  doneWhen?: DoneCheck[];
+  constraints?: string[];
+  approvals?: string[];
+  /** The verifier's last answer, once one has run. */
+  verification?: Verification | null;
   steps: Step[];
 }
 
@@ -119,6 +146,7 @@ export type RunPhase =
   | "waiting_slot"
   | "generating"
   | "rate_limited"
+  | "reviewing"
   /** Folding the room transcript into its mind stone after a run. */
   | "compacting";
 

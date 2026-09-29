@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { Agent, AgentMemory, AgentStatus, MindStone, Room } from "../lib/types.ts";
 import { MindStonePanel } from "./MindStone.tsx";
-import { GymScene } from "./GymScene.tsx";
+import { ComputerScene } from "./ComputerScene.tsx";
 import { Av } from "./bits.tsx";
 
 /**
@@ -31,14 +31,16 @@ export function Participants({
   room,
   agents,
   statuses,
-  memory,
   busy,
   onNewRoom,
   onEditAgent,
   onMessage,
   onRemove,
+  allAgents,
+  onAdd,
   mindStone,
   compacting,
+  showComputer = true,
 }: {
   room: Room | null;
   agents: Map<string, Agent>;
@@ -52,14 +54,20 @@ export function Participants({
   onMessage: (agent: Agent) => void;
   /** Take an agent out of this room. Resolves false when the server refused. */
   onRemove: (agent: Agent) => Promise<boolean>;
+  /** Every agent that exists, so the picker can offer the ones not in this room. */
+  allAgents: Agent[];
+  /** Put an existing agent into this room. Resolves false when the server refused. */
+  onAdd: (agent: Agent) => Promise<boolean>;
   mindStone: MindStone | null;
   compacting: boolean;
+  /** Hide the preview when the Computer tab already shows the big one. */
+  showComputer?: boolean;
 }) {
   const members = room?.members ?? [];
 
   // How many are actually mid-turn. The header used to count members, which is
   // a number that never changes while you watch it — this one does.
-  const lifting = members.filter((id) => statuses[id] === "processing").length;
+  const working = members.filter((id) => statuses[id] === "processing").length;
 
   // The row whose actions are open. One at a time, and it lives under the row
   // rather than floating, so the scrolling list can never clip it.
@@ -67,6 +75,19 @@ export function Participants({
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [pick, setPick] = useState("");
+  const [adding, setAdding] = useState(false);
+  const candidates = allAgents.filter((a) => !members.includes(a.id));
+  const add = async (): Promise<void> => {
+    const a = candidates.find((c) => c.id === pick);
+    if (!a) return;
+    setAdding(true);
+    try {
+      if (await onAdd(a)) setPick("");
+    } finally {
+      setAdding(false);
+    }
+  };
 
   useEffect(() => {
     setOpenId(null);
@@ -104,21 +125,22 @@ export function Participants({
   return (
     <aside className="participants" aria-label="Participants">
       <div className="participants__head">
-        <div className="participants__title">Gym floor</div>
+        <div className="participants__title">Computer</div>
         <div className="participants__count">
           {members.length} {members.length === 1 ? "agent" : "agents"}
-          {lifting > 0 && <span className="participants__lifting"> · {lifting} lifting</span>}
+          {working > 0 && <span className="participants__lifting"> · {working} working</span>}
         </div>
       </div>
 
-      <GymScene
-        members={members}
-        agents={agents}
-        statuses={statuses}
-        memory={memory}
-        roomName={room?.name ?? ""}
-        compact
-      />
+      {showComputer && (
+        <ComputerScene
+          members={members}
+          agents={agents}
+          statuses={statuses}
+          roomName={room?.name ?? "Agora"}
+          live
+        />
+      )}
 
       {room && members.length > 0 && (
         <div className="agents" aria-label="Agents in this room">
@@ -216,6 +238,27 @@ export function Participants({
               </Fragment>
             );
           })}
+        </div>
+      )}
+
+      {room && !room.name.startsWith("dm:") && candidates.length > 0 && (
+        <div className="addmember" aria-label="Add an agent to this room">
+          <select className="select" value={pick} onChange={(e) => setPick(e.target.value)} disabled={busy || adding}>
+            <option value="">Add an agent to {room.name}…</option>
+            {candidates.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} · {a.role}
+              </option>
+            ))}
+          </select>
+          <button
+            className="amenu__btn"
+            disabled={!pick || busy || adding}
+            title={busy ? "Stop the run first" : "Add to this room"}
+            onClick={() => void add()}
+          >
+            {adding ? "Adding…" : "Add"}
+          </button>
         </div>
       )}
 

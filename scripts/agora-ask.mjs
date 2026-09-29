@@ -211,7 +211,13 @@ const outcome = await new Promise((resolve) => {
         }
         sent = true;
         socket.send(
-          JSON.stringify({ type: "broadcast", roomId: room.id, text: `${MARKER}\n\n${ask}` }),
+          JSON.stringify({
+            type: "broadcast",
+            roomId: room.id,
+            text: `${MARKER}\n\n${ask}`,
+            sender: "zenith",
+            idempotencyKey: `${room.id}:${ask}`,
+          }),
         );
         break;
       }

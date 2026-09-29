@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawnAgent } from "./spawn.ts";
+import { classifyExit } from "./outcome.ts";
 import { createInterface } from "node:readline";
 import { toCursorModelId } from "../agent-models.ts";
 import { config } from "../config.ts";
@@ -144,12 +145,8 @@ export class CursorCliDriver implements AgentDriver {
   }
 
   async *run(req: DriverRequest): AsyncIterable<DriverEvent> {
-    const child = spawn(config.cursorBin, this.buildArgs(req), {
-      // Same rule as the Claude driver: an agent that may write runs inside the
-      // folder it was granted. Pinning config.root here meant a scaffold with
-      // relative paths landed in the agora repo, not the project.
+    const child = spawnAgent(config.cursorBin, this.buildArgs(req), {
       cwd: req.cwd ?? config.root,
-      stdio: ["pipe", "pipe", "pipe"],
       signal: req.signal,
     });
 
@@ -294,7 +291,21 @@ export class CursorCliDriver implements AgentDriver {
       }
     }
 
-    yield { type: "final", text, structured, costUsd, isError };
+    yield {
+      type: "final",
+      text,
+      structured,
+      costUsd,
+      isError,
+      exitCode: code,
+      pid: child.pid ?? null,
+      failure: classifyExit({
+        code,
+        aborted: req.signal.aborted,
+        sawResult,
+        stderr,
+      }),
+    };
   }
 }
 

@@ -7,6 +7,7 @@ const PHASE_LABEL: Record<RunPhase, string> = {
   waiting_slot: "Waiting for slot",
   generating: "Generating",
   rate_limited: "Rate limited",
+  reviewing: "Reviewing",
   compacting: "Saving to mind stone",
 };
 

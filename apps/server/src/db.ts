@@ -2,19 +2,22 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { applyMindStoneUpdate } from "./memory.ts";
 import { config } from "./config.ts";
 import { PROTOCOL_VERSION } from "./protocol.ts";
 import type {
+  Choice,
+  DoneCheck,
   Goal,
   GoalStatus,
   Message,
   MessageKind,
-  Choice,
   MindStone,
   Room,
   SpeechAct,
   Step,
   StepStatus,
+  Verification,
 } from "./types.ts";
 
 mkdirSync(dirname(config.dbPath), { recursive: true });
@@ -178,6 +181,33 @@ db.exec(`
   if (!cols.some((c) => c.name === "depends_on")) db.exec(`ALTER TABLE steps ADD COLUMN depends_on TEXT`);
 }
 
+// The goal contract and its verification — see Goal.doneWhen and Goal.verification.
+// JSON text, NULL on goals planned before contracts existed (read back as empty).
+{
+  const cols = db.prepare(`PRAGMA table_info(goals)`).all() as Array<{ name: string }>;
+  const has = (n: string): boolean => cols.some((c) => c.name === n);
+  if (!has("done_when")) db.exec(`ALTER TABLE goals ADD COLUMN done_when TEXT`);
+  if (!has("constraints")) db.exec(`ALTER TABLE goals ADD COLUMN constraints TEXT`);
+  if (!has("approvals")) db.exec(`ALTER TABLE goals ADD COLUMN approvals TEXT`);
+  if (!has("verification")) db.exec(`ALTER TABLE goals ADD COLUMN verification TEXT`);
+}
+
+// What a done step showed — see Step.evidence.
+{
+  const cols = db.prepare(`PRAGMA table_info(steps)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "evidence")) db.exec(`ALTER TABLE steps ADD COLUMN evidence TEXT`);
+}
+
+/** JSON column → value, or the fallback when the column is NULL or unreadable. */
+function jsonOr<T>(v: unknown, fallback: T): T {
+  if (v == null) return fallback;
+  try {
+    return JSON.parse(String(v)) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Where each agent last spoke in each room.
  *
@@ -325,6 +355,58 @@ export function setRoomMembers(roomId: string, members: string[]): Room | null {
  * Take one agent out of a room, naming who directs it afterwards. One write,
  * so the room is never left pointing at an orchestrator that is not a member.
  */
+/** Put an existing agent into a room. Membership only; the agent file stays where it is. */
+export function addRoomMember(roomId: string, agentId: string): Room | null {
+  const room = getRoom(roomId);
+  if (!room) return null;
+  if (room.members.includes(agentId)) return room;
+  db.prepare(`UPDATE rooms SET members = ? WHERE id = ?`).run(JSON.stringify([...room.members, agentId]), roomId);
+  return getRoom(roomId);
+}
+
+/**
+ * Delete a room and everything that hangs off it. No foreign keys, no
+ * cascade, so every table is cleared by hand, children first — the same list
+ * the hand-written SQL of 2026-09-17 had to get right. A VACUUM INTO backup
+ * of the whole database is written first; it is the only way back.
+ */
+export function deleteRoom(roomId: string): {
+  backup: string;
+  counts: { messages: number; goals: number; steps: number; mindStones: number; agentReads: number };
+} | null {
+  const room = getRoom(roomId);
+  if (!room) return null;
+  const file = String((db.prepare(`PRAGMA database_list`).get() as { file?: string }).file ?? "");
+  const dir = `${dirname(file)}/backups`;
+  mkdirSync(dir, { recursive: true });
+  const slug = room.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "room";
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
+  const backup = `${dir}/agora-before-delete-${slug}-${stamp}.db`;
+  db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
+  const count = (sql: string): number => Number((db.prepare(sql).get(roomId) as { c: number }).c);
+  const counts = {
+    messages: count(`SELECT COUNT(*) c FROM messages WHERE room_id = ?`),
+    goals: count(`SELECT COUNT(*) c FROM goals WHERE room_id = ?`),
+    steps: count(`SELECT COUNT(*) c FROM steps WHERE goal_id IN (SELECT id FROM goals WHERE room_id = ?)`),
+    mindStones: count(`SELECT COUNT(*) c FROM mind_stones WHERE room_id = ?`),
+    agentReads: count(`SELECT COUNT(*) c FROM agent_reads WHERE room_id = ?`),
+  };
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM steps WHERE goal_id IN (SELECT id FROM goals WHERE room_id = ?)`).run(roomId);
+    db.prepare(`DELETE FROM goals WHERE room_id = ?`).run(roomId);
+    db.prepare(`DELETE FROM messages WHERE room_id = ?`).run(roomId);
+    db.prepare(`DELETE FROM mind_stones WHERE room_id = ?`).run(roomId);
+    db.prepare(`DELETE FROM agent_reads WHERE room_id = ?`).run(roomId);
+    db.prepare(`DELETE FROM rooms WHERE id = ?`).run(roomId);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return { backup, counts };
+}
+
 export function removeRoomMember(roomId: string, agentId: string, orchestratorId: string): Room | null {
   const room = getRoom(roomId);
   if (!room) return null;
@@ -395,6 +477,7 @@ function rowToStep(r: Record<string, unknown>): Step {
     ownerId: r["owner_id"] == null ? null : String(r["owner_id"]),
     status: String(r["status"]) as StepStatus,
     note: r["note"] == null ? null : String(r["note"]),
+    evidence: r["evidence"] == null ? null : String(r["evidence"]),
     updatedAt: Number(r["updated_at"]),
     dependsOn:
       r["depends_on"] == null
@@ -418,6 +501,10 @@ function rowToGoal(r: Record<string, unknown>): Goal {
     handoff: r["handoff"] == null ? null : String(r["handoff"]),
     verify: r["verify"] == null ? null : String(r["verify"]),
     tailor: r["tailor"] == null ? null : (JSON.parse(String(r["tailor"])) as Goal["tailor"]),
+    doneWhen: jsonOr<DoneCheck[]>(r["done_when"], []),
+    constraints: jsonOr<string[]>(r["constraints"], []),
+    approvals: jsonOr<string[]>(r["approvals"], []),
+    verification: jsonOr<Verification | null>(r["verification"], null),
     steps: listSteps(id),
   };
 }
@@ -524,6 +611,11 @@ export function getStats(recentLimit = 400): Stats {
   };
 }
 
+export function listActiveGoalIds(): string[] {
+  const rows = db.prepare(`SELECT id FROM goals WHERE status = 'active'`).all() as Array<{ id: string }>;
+  return rows.map((row) => String(row.id));
+}
+
 export function reconcileOrphanedGoals(): number {
   const rows = db.prepare(`SELECT id FROM goals WHERE status = 'active'`).all();
   for (const r of rows) {
@@ -577,6 +669,13 @@ export function saveMindStone(
   foldedIn: number,
 ): MindStone {
   const prev = getMindStone(roomId);
+  const update = applyMindStoneUpdate(prev?.content ?? null, content);
+  if (update.conflict) {
+    console.log(
+      JSON.stringify({ event: "mind_stone_conflict", room: roomId, reason: update.reason }),
+    );
+    return prev!;
+  }
   db.prepare(
     `INSERT INTO mind_stones (room_id, content, covered_to, messages, updated_at, revisions)
      VALUES (?, ?, ?, ?, ?, ?)
@@ -588,7 +687,7 @@ export function saveMindStone(
        revisions = mind_stones.revisions + 1`,
   ).run(
     roomId,
-    content,
+    update.content,
     coveredTo,
     (prev?.messages ?? 0) + foldedIn,
     Date.now(),
@@ -609,6 +708,15 @@ export function setGoalHandoff(
   if (verify != null) {
     db.prepare(`UPDATE goals SET verify = ? WHERE id = ?`).run(verify, goalId);
   }
+  return getGoal(goalId);
+}
+
+/** Store the verifier's answer for a goal. Null clears it (a goal reopened for more work). */
+export function setGoalVerification(goalId: string, verification: Verification | null): Goal | null {
+  db.prepare(`UPDATE goals SET verification = ? WHERE id = ?`).run(
+    verification ? JSON.stringify(verification) : null,
+    goalId,
+  );
   return getGoal(goalId);
 }
 
@@ -633,13 +741,24 @@ export function createGoal(input: {
   roomId: string;
   title: string;
   steps: Array<{ title: string; ownerId: string | null; dependsOn?: number[] }>;
+  doneWhen?: DoneCheck[];
+  constraints?: string[];
+  approvals?: string[];
 }): Goal {
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    `INSERT INTO goals (id, room_id, title, status, created_at, ended_at, cost_usd)
-     VALUES (?, ?, ?, 'active', ?, NULL, 0)`,
-  ).run(id, input.roomId, input.title, now);
+    `INSERT INTO goals (id, room_id, title, status, created_at, ended_at, cost_usd, done_when, constraints, approvals)
+     VALUES (?, ?, ?, 'active', ?, NULL, 0, ?, ?, ?)`,
+  ).run(
+    id,
+    input.roomId,
+    input.title,
+    now,
+    JSON.stringify(input.doneWhen ?? []),
+    JSON.stringify(input.constraints ?? []),
+    JSON.stringify(input.approvals ?? []),
+  );
 
   const insert = db.prepare(
     `INSERT INTO steps (id, goal_id, idx, title, owner_id, status, note, updated_at, depends_on)
@@ -660,11 +779,12 @@ export function updateStep(
   idx: number,
   status: StepStatus,
   note?: string | null,
+  evidence?: string | null,
 ): Step | null {
   db.prepare(
-    `UPDATE steps SET status = ?, note = COALESCE(?, note), updated_at = ?
+    `UPDATE steps SET status = ?, note = COALESCE(?, note), evidence = COALESCE(?, evidence), updated_at = ?
      WHERE goal_id = ? AND idx = ?`,
-  ).run(status, note ?? null, Date.now(), goalId, idx);
+  ).run(status, note ?? null, evidence ?? null, Date.now(), goalId, idx);
   const row = db.prepare(`SELECT * FROM steps WHERE goal_id = ? AND idx = ?`).get(goalId, idx);
   return row ? rowToStep(row as Record<string, unknown>) : null;
 }
@@ -706,7 +826,15 @@ export function closeGoal(
 
   const steps = listSteps(goalId);
   const achieved = steps.length > 0 && steps.every((s) => s.status === "done");
-  const status: GoalStatus = achieved ? "done" : "stopped";
+  // A goal with a contract is done only when a verifier passed every condition.
+  // Steps all ticked but no verification, or a failed one, is the false green
+  // this column exists to refuse — whatever the run's stop reason said.
+  const row = db.prepare(`SELECT done_when, verification FROM goals WHERE id = ?`).get(goalId) as
+    | { done_when?: unknown; verification?: unknown }
+    | undefined;
+  const hasContract = jsonOr<DoneCheck[]>(row?.done_when, []).length > 0;
+  const verified = jsonOr<Verification | null>(row?.verification, null)?.passed === true;
+  const status: GoalStatus = achieved && (!hasContract || verified) ? "done" : "stopped";
 
   db.prepare(`UPDATE goals SET status = ?, ended_at = ?, cost_usd = ? WHERE id = ?`).run(
     status,

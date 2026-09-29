@@ -42,11 +42,14 @@ export function PlanStrip({
             <li
               key={step.id}
               className={`planstrip__step planstrip__step--${step.status}`}
-              title={
-                step.note
-                  ? `${step.title} — ${step.note}`
-                  : `${step.title}${owner ? ` · ${owner.name}` : ""}`
-              }
+              title={[
+                step.title,
+                owner ? `· ${owner.name}` : "",
+                step.note ? `— ${step.note}` : "",
+                step.evidence ? `· evidence: ${step.evidence}` : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
             >
               <span className="planstrip__mark" aria-hidden="true">
                 {MARK[step.status]}

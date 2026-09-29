@@ -26,6 +26,7 @@ import { basename, join, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { config } from "../config.ts";
+import { agentsRepoRoot } from "../agents-repo.ts";
 import { agentFilePath, parseAgentFile, sections } from "../agents/registry.ts";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,40}$/;
@@ -157,9 +158,13 @@ function assertUnchanged(before: string, after: string): void {
 }
 
 // ---- git ----------------------------------------------------------------
+// The repo that holds agent files: agents/.git when it exists (the outer repo
+// ignores agents/), else the outer root. Paths below are relative to it.
+const REPO = agentsRepoRoot();
+
 function git(args: string[], opts: { ok?: number[] } = {}): string {
   try {
-    return execFileSync("git", ["-C", config.root, ...args], { encoding: "utf8", timeout: 15_000 });
+    return execFileSync("git", ["-C", REPO, ...args], { encoding: "utf8", timeout: 15_000 });
   } catch (err) {
     const e = err as { status?: number; stdout?: string; stderr?: string };
     if (e.status !== undefined && (opts.ok ?? []).includes(e.status)) return e.stdout ?? "";
@@ -241,7 +246,7 @@ switch (cmd) {
   }
   case "log": {
     if (!a1) usage();
-    const rel = relative(config.root, agentPath(a1));
+    const rel = relative(REPO, agentPath(a1));
     // --follow: agent files moved into per-room folders, and a plain log stops
     // dead at the rename, so the mechanic would see the move and nothing before it.
     process.stdout.write(git(["log", "--follow", "--date=short", "--format=%h %ad %an  %s", "-n", "10", "--", rel]) || "(no history)\n");
@@ -263,7 +268,7 @@ switch (cmd) {
       process.stdout.write(`${diff}\n\npreview only — nothing written. ${a2}: ${oldLen} -> ${body.length} chars\n${beforeLine(a1)}\n`);
       break;
     }
-    const rel = relative(config.root, path);
+    const rel = relative(REPO, path);
     snapshotIfDirty(rel, a1);
     writeAtomic(path, after);
     // Parse it back through the real loader: if this throws, restore on the spot.
@@ -296,7 +301,7 @@ switch (cmd) {
     const after = raw + "\n";
     if (after === before) refuse("no change");
     const diff = diffAgainst(path, after);
-    const rel = relative(config.root, path);
+    const rel = relative(REPO, path);
     snapshotIfDirty(rel, a1);
     writeAtomic(path, after);
     const hash = commit(
@@ -309,7 +314,7 @@ switch (cmd) {
   }
   case "undo": {
     if (!a1) usage();
-    const rel = relative(config.root, agentPath(a1));
+    const rel = relative(REPO, agentPath(a1));
     // --follow for the same reason as `log`: without it the last edit of an
     // agent that predates the move is invisible, and undo reports nothing to undo.
     const last = git(["log", "--follow", "--format=%H %s", "--grep", `^Agora-Edit: [a-z0-9-]* ${a1} `, "-n", "1", "--", rel]).trim();
@@ -318,7 +323,7 @@ switch (cmd) {
     try {
       execFileSync(
         "git",
-        ["-C", config.root, "-c", `user.name=${author}`, "-c", `user.email=${author}@agents.agora`, "revert", "--no-edit", hash!],
+        ["-C", REPO, "-c", `user.name=${author}`, "-c", `user.email=${author}@agents.agora`, "revert", "--no-edit", hash!],
         { encoding: "utf8", timeout: 15_000 },
       );
     } catch (err) {

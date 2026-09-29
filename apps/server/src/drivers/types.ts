@@ -1,3 +1,7 @@
+import type { DriverFailure } from "./outcome.ts";
+
+export type { DriverFailure };
+
 export interface DriverRequest {
   systemPrompt: string;
   /** The full prompt for this turn: room transcript + the instruction. */
@@ -51,6 +55,9 @@ export type DriverEvent =
       structured: unknown | null;
       costUsd: number | null;
       isError: boolean;
+      failure?: DriverFailure | null;
+      exitCode?: number | null;
+      pid?: number | null;
     };
 
 export interface AgentDriver {

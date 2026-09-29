@@ -8,6 +8,7 @@ import { Transcript } from "./components/Transcript.tsx";
 import { RunBar } from "./components/RunBar.tsx";
 import { PlanStrip } from "./components/PlanStrip.tsx";
 import { Participants } from "./components/Participants.tsx";
+import { Computers } from "./components/Computers.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { AgentEditor } from "./components/AgentEditor.tsx";
 import { NewRoom } from "./components/NewRoom.tsx";
@@ -20,6 +21,9 @@ export function App() {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [view, setView] = useState<View>("chatroom");
   const [agentModal, setAgentModal] = useState<AgentModal>(null);
+  // Two taps to delete a room: the first turns the button into a question.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => setConfirmDelete(false), [roomId]);
   const [showRoom, setShowRoom] = useState(false);
   /** What a "Message" button dropped into the composer, with a nonce so the same agent twice still fires. */
   const [prefill] = useState<{ text: string; nonce: number } | null>(null);
@@ -42,6 +46,8 @@ export function App() {
     state,
     openDm,
     removeMember,
+    addMember,
+    deleteRoom,
     broadcast,
     stop,
     resume,
@@ -139,7 +145,13 @@ export function App() {
             <h2>
               <span className="hash">#</span>
               <span>
-                {view === "dashboard" ? "Dashboard" : view === "workflow" ? "Workflow" : (room?.name ?? "No room selected")}
+                {view === "dashboard"
+                  ? "Dashboard"
+                  : view === "workflow"
+                    ? "Workflow"
+                    : view === "computer"
+                      ? "Computer"
+                      : (room?.name ?? "No room selected")}
               </span>
             </h2>
             <div className="topic">
@@ -149,11 +161,42 @@ export function App() {
                   ? room
                     ? `Goals set in ${room.name}, and how far each one got`
                     : "Pick a room to see its goals"
-                  : room
+                  : view === "computer"
+                    ? "One shared desktop — double-click to expand and drive it"
+                    : room
                     ? room.topic || room.members.map((id) => agentMap.get(id)?.name ?? id).join(", ")
                     : "Create a room to get started"}
             </div>
-            <button className="headbtn" onClick={() => setAgentModal("new")}>Add agent</button>
+            <button className="headbtn" onClick={() => setAgentModal("new")}>New agent</button>
+            {room && view === "chatroom" && (
+              confirmDelete ? (
+                <span className="headconfirm">
+                  Delete <b>{room.name}</b> and its history?
+                  <button className="headbtn" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                  <button
+                    className="headbtn headbtn--danger"
+                    onClick={() => {
+                      const id = room.id;
+                      setConfirmDelete(false);
+                      void deleteRoom(id).then((ok) => {
+                        if (ok) setRoomId(null);
+                      });
+                    }}
+                  >
+                    Yes, delete
+                  </button>
+                </span>
+              ) : (
+                <button
+                  className="headbtn headbtn--danger"
+                  disabled={busy}
+                  title={busy ? "Stop the run first" : "Delete this room and its history (a backup is written first)"}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  Delete room
+                </button>
+              )
+            )}
           </header>
         )}
 
@@ -210,6 +253,13 @@ export function App() {
             onStop={stop}
             onResume={resume}
           />
+        ) : view === "computer" ? (
+          <Computers
+            rooms={crewRooms}
+            agents={agentMap}
+            statuses={state.statuses}
+            runs={state.runs}
+          />
         ) : (
           <>
             <Transcript
@@ -243,8 +293,11 @@ export function App() {
         onEditAgent={(a) => setAgentModal(a)}
         onMessage={(a) => void openThread(a)}
         onRemove={(a) => (room ? removeMember(room.id, a.id) : Promise.resolve(false))}
+        allAgents={state.agents}
+        onAdd={(a) => (room ? addMember(room.id, a.id) : Promise.resolve(false))}
         mindStone={state.mindStone}
         compacting={state.run?.phase === "compacting"}
+        showComputer={view !== "computer"}
       />
 
       {agentModal && (

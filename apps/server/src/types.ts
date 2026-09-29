@@ -1,3 +1,7 @@
+import type { RunStatus, TerminalReason } from "./lifecycle.ts";
+
+export type { RunStatus, TerminalReason };
+
 export type AgentStatus = "active" | "processing" | "idle" | "offline";
 
 /**
@@ -143,6 +147,34 @@ export interface MindStone {
 export type GoalStatus = "active" | "done" | "stopped";
 export type StepStatus = "pending" | "active" | "done" | "blocked" | "skipped";
 
+export type CheckVerdict = "pass" | "fail" | "unverified";
+
+/** One condition of a goal's contract: what must hold, and how it will be shown. */
+export interface DoneCheck {
+  text: string;
+  how: string;
+}
+
+/** A verifier's verdict on one condition, with the evidence it cited. */
+export interface CheckResult {
+  index: number;
+  verdict: CheckVerdict;
+  evidence: string;
+}
+
+/**
+ * The verifier's answer for a whole goal — the source of the run receipt.
+ * `passed` is derived: every condition present and passed.
+ */
+export interface Verification {
+  verifierId: string;
+  at: number;
+  passed: boolean;
+  checks: CheckResult[];
+  risks: string[];
+  approvals: string[];
+}
+
 export interface Step {
   id: string;
   goalId: string;
@@ -152,6 +184,8 @@ export interface Step {
   ownerId: string | null;
   status: StepStatus;
   note: string | null;
+  /** What ran or was seen that shows the step is done. Null until reported with a `done`. */
+  evidence: string | null;
   updatedAt: number;
   /**
    * Indices of steps that must be done before this one starts. Empty means it
@@ -186,6 +220,14 @@ export interface Goal {
   verify: string | null;
   /** Per-agent tailoring for this goal, keyed by agent id. Null when none. */
   tailor: Record<string, Tailor> | null;
+  /** The contract: conditions that must ALL hold for the goal to be done. Empty on goals planned before contracts. */
+  doneWhen: DoneCheck[];
+  /** What the room must not change or do while working this goal. */
+  constraints: string[];
+  /** Actions that need Dominic's go before they happen. */
+  approvals: string[];
+  /** The verifier's last answer. Null until a verifier has run. */
+  verification: Verification | null;
   steps: Step[];
 }
 
@@ -196,6 +238,8 @@ export type RunPhase =
   | "waiting_slot"
   | "generating"
   | "rate_limited"
+  /** Progress review. Not a stop. */
+  | "reviewing"
   /** Folding the room transcript into its mind stone after a run. */
   | "compacting";
 
@@ -208,7 +252,15 @@ export interface RunState {
   /** Agent currently generating, if any. */
   speaking: string | null;
   costUsd: number;
+  /**
+   * Legacy stop string. The loop still branches on this. Written only by
+   * `Orchestrator.seal`, which also fills `status` and `terminal`.
+   */
   stopReason: string | null;
+  /** Lifecycle status. Live phases match `phase`; terminals are the classified end. */
+  status: RunStatus;
+  /** Set once, when the run first ends. A second end does not replace it. */
+  terminal: TerminalReason | null;
   /** The goal this run is working toward, if a plan was produced. */
   goalId: string | null;
   /** Current phase of the run loop. null when inactive. */
@@ -258,7 +310,7 @@ export type ServerEvent =
   | { type: "error"; roomId: string | null; detail: string };
 
 export type ClientCommand =
-  | { type: "broadcast"; roomId: string; text: string }
+  | { type: "broadcast"; roomId: string; text: string; idempotencyKey?: string; sender?: string }
   | { type: "stop"; roomId: string }
   /** Carry on with an existing goal instead of planning a new one. */
   | { type: "resume"; roomId: string; goalId: string }

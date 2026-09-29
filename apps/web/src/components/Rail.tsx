@@ -3,7 +3,7 @@ import type { Agent, AgentStatus, Room, RunState } from "../lib/types.ts";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "../lib/theme.ts";
 import { Av } from "./bits.tsx";
 
-export type View = "dashboard" | "workflow" | "chatroom";
+export type View = "dashboard" | "workflow" | "chatroom" | "computer";
 
 interface Props {
   rooms: Room[];
@@ -37,6 +37,7 @@ const PHASE_SHORT: Record<string, string> = {
   waiting_slot: "waiting",
   generating: "writing",
   rate_limited: "rate-limited",
+  reviewing: "reviewing",
   compacting: "folding",
 };
 
@@ -55,6 +56,12 @@ const Icon = {
   chatroom: (
     <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-5.2A8 8 0 1 1 21 12z" />
+    </svg>
+  ),
+  computer: (
+    <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="4" width="18" height="12" rx="1.5" />
+      <path d="M8 20h8M12 16v4" />
     </svg>
   ),
 };
@@ -126,6 +133,9 @@ export function Rail({
         </button>
         <button className={view === "chatroom" ? "on" : ""} onClick={() => onSelectView("chatroom")}>
           {Icon.chatroom}Chatroom
+        </button>
+        <button className={view === "computer" ? "on" : ""} onClick={() => onSelectView("computer")}>
+          {Icon.computer}Computer
         </button>
       </div>
 

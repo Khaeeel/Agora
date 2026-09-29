@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { spawnAgent } from "./spawn.ts";
+import { classifyExit } from "./outcome.ts";
 import { createInterface } from "node:readline";
 import { config } from "../config.ts";
 import type { AgentDriver, DriverEvent, DriverRequest } from "./types.ts";
@@ -69,9 +70,8 @@ export class ClaudeCliDriver implements AgentDriver {
   }
 
   async *run(req: DriverRequest): AsyncIterable<DriverEvent> {
-    const child = spawn(config.claudeBin, this.buildArgs(req), {
+    const child = spawnAgent(config.claudeBin, this.buildArgs(req), {
       cwd: req.cwd ?? config.root,
-      stdio: ["pipe", "pipe", "pipe"],
       signal: req.signal,
     });
 
@@ -158,6 +158,20 @@ export class ClaudeCliDriver implements AgentDriver {
       }
     }
 
-    yield { type: "final", text, structured, costUsd, isError };
+    yield {
+      type: "final",
+      text,
+      structured,
+      costUsd,
+      isError,
+      exitCode: code,
+      pid: child.pid ?? null,
+      failure: classifyExit({
+        code,
+        aborted: req.signal.aborted,
+        sawResult,
+        stderr,
+      }),
+    };
   }
 }

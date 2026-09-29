@@ -6,6 +6,7 @@
     "dev": "node --watch --env-file-if-exists=../../.env src/index.ts",
     "start": "node --env-file-if-exists=../../.env src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/lifecycle.test.ts src/harness.test.ts src/contract.test.ts",
     "smoke:driver": "node --env-file-if-exists=../../.env src/smoke/driver.ts",
     "smoke:loop": "node --env-file-if-exists=../../.env src/smoke/loop.ts"
   },

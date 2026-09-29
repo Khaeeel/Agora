@@ -50,9 +50,17 @@ const SINCE = Date.now() - DAYS * 86_400_000;
 const db = new DatabaseSync(join(ROOT, "data/agora.db"), { readOnly: true });
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-function git(argv) {
-  try { return execFileSync("git", argv, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }); } catch { return ""; }
+// Agent files have their own repo (agents/.git) since the outer repo stopped
+// tracking them; grants history and forge commits are read from there.
+// Paths inside it have no "agents/" prefix. Before that repo exists, the
+// outer repo is read as before.
+const AGENTS_REPO = existsSync(join(ROOT, "agents/.git")) ? join(ROOT, "agents") : ROOT;
+const AGENTS_PREFIX = AGENTS_REPO === ROOT ? "agents/" : "";
+function gitIn(cwd, argv) {
+  try { return execFileSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 << 20 }); } catch { return ""; }
 }
+const git = (argv) => gitIn(AGENTS_REPO, argv);
+const gitOuter = (argv) => gitIn(ROOT, argv);
 // Same YAML parser the server's registry uses, so multi-line flow lists and
 // dash lists read exactly as the server reads them.
 const { parse: parseYaml } = createRequire(join(ROOT, "apps/server/package.json"))("yaml");
@@ -81,9 +89,9 @@ const minutes = (a, b) => Math.max(0, Math.round((b - a) / 60000));
 function agentPathNow(agentId) {
   for (const e of readdirSync(join(ROOT, "agents"), { withFileTypes: true })) {
     if (!e.isDirectory() || e.name.startsWith(".")) continue;
-    if (existsSync(join(ROOT, "agents", e.name, `${agentId}.md`))) return `agents/${e.name}/${agentId}.md`;
+    if (existsSync(join(ROOT, "agents", e.name, `${agentId}.md`))) return `${AGENTS_PREFIX}${e.name}/${agentId}.md`;
   }
-  return `agents/${agentId}.md`;
+  return `${AGENTS_PREFIX}${agentId}.md`;
 }
 const grantCache = new Map();
 function grantHistory(agentId) {
@@ -413,9 +421,11 @@ for (const line of git(["log", "--format=%H %ct %s", "--grep=^forge("]).trim().s
   const at = Number(ct) * 1000;
   if (at < SINCE) continue;
   // A forge commit names the file it wrote; read it at whatever path it had then.
-  const forgedPath = git(["show", "--format=", "--name-only", sha]).split("\n").map((l) => l.trim()).find((l) => l.endsWith(`/${id}.md`) || l === `agents/${id}.md`);
+  const forgedPath = git(["show", "--format=", "--name-only", sha]).split("\n").map((l) => l.trim()).find((l) => l.endsWith(`/${id}.md`) || l === `${AGENTS_PREFIX}${id}.md`);
   const agentSrc = forgedPath ? git(["show", `${sha}:${forgedPath}`]) : "";
-  const tplSrc = git(["show", `${sha}:templates/agents/${template}.md`]);
+  // Templates live in the outer repo; a forge sha from the agents repo cannot
+  // address them, so read the template as it is at the outer HEAD.
+  const tplSrc = AGENTS_REPO === ROOT ? git(["show", `${sha}:templates/agents/${template}.md`]) : gitOuter(["show", `HEAD:templates/agents/${template}.md`]);
   const name = sectionOf(agentSrc, "Name").split("\n")[0]?.trim() ?? id;
   const ev = forgeEvents
     .filter((e) => String(e.text).startsWith(`forged · ${name} (`) && Math.abs(e.created_at - at) < 10 * 60000)

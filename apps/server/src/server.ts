@@ -12,6 +12,8 @@ import {
   listGoals,
   listMessages,
   listRooms,
+  addRoomMember,
+  deleteRoom,
   removeRoomMember,
   setRoomMembers,
 } from "./db.ts";
@@ -22,7 +24,17 @@ import {
   watchAgents,
   writeAgentFile,
 } from "./agents/registry.ts";
+import {
+  captureComputerFrame,
+  computerStatus,
+  dispatchComputerInput,
+  type ComputerInput,
+} from "./computer.ts";
 import { Orchestrator } from "./orchestrator.ts";
+import { buildDiagnostics } from "./diagnostics.ts";
+import { parseClientCommand } from "./events.ts";
+import { classifyRelayText, InboundDedup, senderAllowed } from "./relay.ts";
+import { replayTranscript } from "./replay.ts";
 import type { Agent, AgentStatus, ClientCommand, ServerEvent } from "./types.ts";
 
 export async function buildServer(): Promise<
@@ -47,6 +59,11 @@ export async function buildServer(): Promise<
   };
 
   const orchestrator = new Orchestrator(broadcast, () => agents);
+  const inboundDedup = new InboundDedup(10 * 60_000);
+  const relaySenders = (process.env.AGORA_RELAY_SENDERS ?? "")
+    .split(",")
+    .map((sender) => sender.trim())
+    .filter((sender) => sender.length > 0);
 
   const stopWatching = watchAgents((next) => {
     agents = next;
@@ -107,6 +124,66 @@ export async function buildServer(): Promise<
   }));
 
   app.get("/api/stats", async () => getStats());
+
+  app.get("/api/computer", async () => computerStatus());
+
+  app.get("/api/computer/frame.jpg", async (_req, reply) => {
+    try {
+      const frame = await captureComputerFrame();
+      if (!frame) {
+        return reply.code(503).send({ error: "Chrome is offline. Start it headless: bash scripts/start-chrome.sh --headless" });
+      }
+      reply.header("Content-Type", "image/jpeg");
+      reply.header("Cache-Control", "no-store");
+      if (frame.url) reply.header("X-Computer-Url", frame.url);
+      if (frame.title) reply.header("X-Computer-Title", encodeURIComponent(frame.title));
+      return reply.send(frame.bytes);
+    } catch (err) {
+      return reply.code(503).send({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  /** Click / type / scroll inside the live Chrome tab from the Computer UI. */
+  app.post<{ Body: ComputerInput }>("/api/computer/input", async (req, reply) => {
+    const body = req.body;
+    if (!body || typeof body !== "object" || !("kind" in body)) {
+      return reply.code(400).send({ error: "body.kind is required" });
+    }
+    try {
+      return await dispatchComputerInput(body);
+    } catch (err) {
+      return reply.code(503).send({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  app.get<{ Params: { id: string } }>("/api/rooms/:id/diagnostics", async (req, reply) => {
+    const room = listRooms().find((item) => item.id === req.params.id);
+    if (!room) return reply.code(404).send({ error: "No such room" });
+    return buildDiagnostics({
+      roomId: room.id,
+      roomName: room.name,
+      messages: listMessages(room.id),
+      goals: listGoals(room.id),
+      run: orchestrator.getState(room.id),
+    });
+  });
+
+  app.get<{ Params: { id: string } }>("/api/rooms/:id/replay", async (req, reply) => {
+    const room = listRooms().find((item) => item.id === req.params.id);
+    if (!room) return reply.code(404).send({ error: "No such room" });
+    return replayTranscript(
+      listMessages(room.id).map((message) => ({
+        seq: message.seq,
+        authorId: message.authorId,
+        kind: message.kind,
+        text: message.text,
+      })),
+    );
+  });
 
   app.post<{
     Body: { name?: string; topic?: string; members?: string[]; orchestratorId?: string };
@@ -265,6 +342,50 @@ export async function buildServer(): Promise<
   );
 
   /**
+   * Put an existing agent into a room, from the room. Refused mid-run: the
+   * live loop holds a roster snapshot and would not see the newcomer anyway.
+   * The agent file stays in its own folder; only the roster changes.
+   */
+  app.post<{ Params: { id: string }; Body: { agentId?: string } }>(
+    "/api/rooms/:id/members",
+    async (req, reply) => {
+      const room = listRooms().find((r) => r.id === req.params.id);
+      if (!room) return reply.code(404).send({ error: "No such room" });
+      const agentId = (req.body?.agentId ?? "").trim().toLowerCase();
+      const agent = agents.get(agentId);
+      if (!agent) return reply.code(404).send({ error: `No agent called "${agentId}".` });
+      if (room.members.includes(agent.id)) {
+        return reply.code(400).send({ error: `${agent.name} is already in ${room.name}.` });
+      }
+      if (orchestrator.getState(room.id)?.active) {
+        return reply.code(400).send({ error: `Stop the run in ${room.name} before adding ${agent.name}.` });
+      }
+      const updated = addRoomMember(room.id, agent.id);
+      broadcast({ type: "rooms", rooms: listRooms() });
+      return { room: updated };
+    },
+  );
+
+  /**
+   * Delete a room: its transcript, goals, steps, mind stone and read marks.
+   * Refused mid-run. The crew files are never touched — a deleted room's
+   * agents stay on disk as retired crew, exactly as the hand-run deletions
+   * of 2026-09-17 left them. A whole-database backup is written first.
+   */
+  app.delete<{ Params: { id: string } }>("/api/rooms/:id", async (req, reply) => {
+    const room = listRooms().find((r) => r.id === req.params.id);
+    if (!room) return reply.code(404).send({ error: "No such room" });
+    if (orchestrator.getState(room.id)?.active) {
+      return reply.code(400).send({ error: `Stop the run in ${room.name} before deleting it.` });
+    }
+    const result = deleteRoom(room.id);
+    if (!result) return reply.code(404).send({ error: "No such room" });
+    console.log(JSON.stringify({ event: "room_deleted", room: room.name, id: room.id, ...result }));
+    broadcast({ type: "rooms", rooms: listRooms() });
+    return { ok: true, ...result };
+  });
+
+  /**
    * Take one agent out of a room. Refused mid-run, since the loop may be about
    * to hand it a turn, and refused for the last member. Removing the agent that
    * directs the room hands it to the next member allowed to direct one. The
@@ -344,15 +465,31 @@ export async function buildServer(): Promise<
     );
 
     socket.on("message", (raw: Buffer) => {
-      let cmd: ClientCommand;
-      try {
-        cmd = JSON.parse(raw.toString()) as ClientCommand;
-      } catch {
-        return;
-      }
+      const cmd: ClientCommand | null = parseClientCommand(raw.toString());
+      if (!cmd) return;
 
       if (cmd.type === "broadcast") {
         if (!cmd.text?.trim()) return;
+        if (!senderAllowed(cmd.sender, relaySenders)) {
+          broadcast({ type: "error", roomId: cmd.roomId, detail: "That sender is not allowed to start a run." });
+          return;
+        }
+        if (cmd.idempotencyKey && !inboundDedup.accept(cmd.idempotencyKey, Date.now())) {
+          broadcast({ type: "error", roomId: cmd.roomId, detail: "Duplicate inbound message ignored." });
+          return;
+        }
+        const intent = classifyRelayText(cmd.text);
+        console.log(JSON.stringify({ event: "relay_intent", room: cmd.roomId, intent }));
+        if (intent === "cancel") {
+          if (!orchestrator.stop(cmd.roomId)) {
+            broadcast({ type: "error", roomId: cmd.roomId, detail: "Nothing running." });
+          }
+          return;
+        }
+        if (intent === "status") {
+          broadcast({ type: "error", roomId: cmd.roomId, detail: "Status is read-only. Use the status command." });
+          return;
+        }
         // "@fury …" is a direct message to one agent: no planner, no goal.
         const dm = cmd.text.trim().match(/^@([a-z0-9][a-z0-9_-]*)\s+([\s\S]+)$/i);
         if (dm) {

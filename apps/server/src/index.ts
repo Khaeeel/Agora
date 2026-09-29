@@ -2,9 +2,11 @@ import { config, notifyIsLive } from "./config.ts";
 import {
   createRoom,
   goalsAbandonedWithin,
+  listActiveGoalIds,
   listRooms,
   reconcileOrphanedGoals,
 } from "./db.ts";
+import { selectBootResumes } from "./recovery.ts";
 import { loadAgents } from "./agents/registry.ts";
 import { PROTOCOL_VERSION } from "./protocol.ts";
 import { buildServer } from "./server.ts";
@@ -34,9 +36,9 @@ function seed(): void {
 seed();
 
 // Runs live in memory, so anything in flight died with the previous process.
-// Capture what was open BEFORE reconciliation rewrites their statuses, so the
-// unfinished ones can be picked up again once the server is listening.
-const abandoned = goalsAbandonedWithin(15 * 60_000);
+// Capture the goals that are still active BEFORE reconciliation marks them
+// stopped. Resume only those. A goal that was already stopped stays stopped.
+const activeBefore = listActiveGoalIds();
 const orphaned = reconcileOrphanedGoals();
 if (orphaned > 0) {
   console.log(`[boot] closed ${orphaned} goal(s) orphaned by a previous run`);
@@ -50,8 +52,11 @@ await app.listen({ port: config.port, host: config.host });
 // when the process died gets picked back up here — the same path the Resume
 // button uses — so a deploy, a crash or a machine reboot costs a pause rather
 // than a goal. Delayed a little so the first agents are not racing boot.
-const freshlyOrphaned = goalsAbandonedWithin(60_000).filter((g) =>
-  abandoned.some((a) => a.id === g.id),
+const freshlyOrphaned = goalsAbandonedWithin(60_000).filter((goal) =>
+  selectBootResumes(
+    activeBefore,
+    [{ id: goal.id, open: goal.steps.some((step) => step.status !== "done") }],
+  ).includes(goal.id),
 );
 if (freshlyOrphaned.length > 0) {
   console.log(

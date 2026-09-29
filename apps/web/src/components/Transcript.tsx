@@ -10,7 +10,7 @@ interface Props {
   onAnswer: (messageId: string, label: string) => void;
   /** A run holds the room, so a decision cannot start another one yet. */
   busy: boolean;
-  /** A private thread: human bubbles sit on the right, no "direct message" tag. */
+  /** A private thread: no "direct message" tag. Human bubbles sit on the right in every room. */
   dm?: boolean;
 }
 
@@ -218,7 +218,7 @@ export function Transcript({ messages, live, agents, onAnswer, busy, dm = false 
 
         return (
           <div key={m.id}>{daybar}
-            <div className={`msg${tight ? " tight" : ""}${dm && human ? " mine" : ""}`}>
+            <div className={`msg${tight ? " tight" : ""}${human ? " mine" : ""}`}>
               <Av name={name} color={color} size={32} />
               <div className="body">
                 {!tight && (

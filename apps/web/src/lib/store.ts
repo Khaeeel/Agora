@@ -433,10 +433,53 @@ export function useAgora(roomId: string | null) {
     }
   }, []);
 
+  /** Put an existing agent into a room. The server refuses mid-run or when already a member. */
+  const addMember = useCallback(async (targetRoomId: string, agentId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}/members`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { room?: Room; error?: string };
+      if (!res.ok || !data.room) {
+        setState((s) => ({ ...s, error: data.error ?? `Could not add ${agentId} (HTTP ${res.status}).` }));
+        return false;
+      }
+      const updated = data.room;
+      setState((s) => ({ ...s, rooms: s.rooms.map((r) => (r.id === updated.id ? updated : r)) }));
+      return true;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      setState((s) => ({ ...s, error: `Could not add ${agentId}: ${detail}` }));
+      return false;
+    }
+  }, []);
+
+  /** Delete a room and its history. The server backs the database up first and refuses mid-run. */
+  const deleteRoom = useCallback(async (targetRoomId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        setState((s) => ({ ...s, error: data.error ?? `Could not delete the room (HTTP ${res.status}).` }));
+        return false;
+      }
+      setState((s) => ({ ...s, rooms: s.rooms.filter((r) => r.id !== targetRoomId) }));
+      return true;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      setState((s) => ({ ...s, error: `Could not delete the room: ${detail}` }));
+      return false;
+    }
+  }, []);
+
   return {
     state,
     openDm,
     removeMember,
+    addMember,
+    deleteRoom,
     broadcast,
     stop,
     resume,

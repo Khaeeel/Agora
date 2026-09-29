@@ -20,6 +20,7 @@ import {
   unfoldedMessages,
   setGoalHandoff,
   setGoalTailor,
+  setGoalVerification,
   setRoomMembers,
   updateStep,
 } from "./db.ts";
@@ -218,7 +219,7 @@ export function resolveGrant(
   if (real === config.root || real.startsWith(config.root + "/")) {
     return { error: "the agora repo itself is never opened to a room — it holds the .env." };
   }
-  if (!ACCESS_ROOTS.some((r) => real === r || real.startsWith(r + "/"))) {
+  if (!directoryAllowed(real, ACCESS_ROOTS)) {
     return { error: `"${real}" is outside the folders a room may be given (${ACCESS_ROOTS.join(", ")}).` };
   }
   if (kind === "dir-write") {
@@ -239,6 +240,19 @@ import {
   bodyWords,
   parseMarkers,
   wordLimitFor, normalizeReply } from "./protocol.ts";
+import { transitionPhase, transitionTerminal, type LegacyStopReason } from "./lifecycle.ts";
+import { directoryAllowed } from "./grants.ts";
+import { evaluateCaps } from "./policy.ts";
+import { agentsRepoRoot } from "./agents-repo.ts";
+import {
+  contractText,
+  gateStepReports,
+  normalizeContract,
+  normalizeVerification,
+  pickVerifier,
+  receiptSections,
+} from "./contract.ts";
+import { Semaphore } from "./semaphore.ts";
 import { ClaudeCliDriver } from "./drivers/claude-cli.ts";
 import { CursorCliDriver } from "./drivers/cursor-cli.ts";
 import { levelForRoom, notify, type NotifyKind } from "./notify.ts";
@@ -373,6 +387,32 @@ const PLAN_SCHEMA = {
       required: ["name", "topic", "members"],
       additionalProperties: false,
     },
+    doneWhen: {
+      type: "array",
+      description:
+        "In work mode: two to five conditions that must ALL hold for the goal to count as done — the CONTRACT. Each is an outcome, never an activity ('the 3 failing tests pass', not 'run the tests'), and says HOW it will be shown: a command and what it prints, a file and line, a number measured, a page seen. A verifier who did not do the work checks each one before the goal can close, and can only pass what has evidence. Empty in answer mode.",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "The condition, one line, as an outcome." },
+          how: { type: "string", description: "How it will be shown to hold: the command, file, number or page." },
+        },
+        required: ["text", "how"],
+        additionalProperties: false,
+      },
+    },
+    constraints: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "In work mode: what the room must NOT change or do for this goal — a schema, a config, production, a file. One line each, at most five. Empty when nothing is off limits beyond the room rules.",
+    },
+    approvals: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "In work mode: actions that need Dominic's go BEFORE they happen — push, deploy, send, spend, delete. One line each. Empty when none.",
+    },
     steps: {
       type: "array",
       description:
@@ -397,7 +437,7 @@ const PLAN_SCHEMA = {
       },
     },
   },
-  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "access", "tailor", "createRoom", "goal", "steps"],
+  required: ["mode", "responder", "discuss", "needsLookup", "spawn", "access", "tailor", "createRoom", "goal", "doneWhen", "constraints", "approvals", "steps"],
   additionalProperties: false,
 } as const;
 
@@ -426,6 +466,9 @@ interface Plan {
   tailor: Array<{ agent: string } & Tailor> | null;
   createRoom: { name: string; topic: string; members: string[] } | null;
   goal: string;
+  doneWhen?: Array<{ text: string; how: string }> | null;
+  constraints?: string[] | null;
+  approvals?: string[] | null;
   steps: Array<{ title: string; owner: string | null; dependsOn?: number[] }>;
 }
 
@@ -465,8 +508,13 @@ const DECISION_SCHEMA = {
             type: ["string", "null"],
             description: "Short reason, required when blocked.",
           },
+          evidence: {
+            type: ["string", "null"],
+            description:
+              "REQUIRED when status is done: what ran or was seen that shows it, citing the [#seq] where it was reported — a command and its output, a file and line, a number, a page. A done with no evidence is recorded as still active. Null for other statuses.",
+          },
         },
-        required: ["index", "status", "note"],
+        required: ["index", "status", "note", "evidence"],
         additionalProperties: false,
       },
     },
@@ -572,41 +620,14 @@ interface Decision {
   next: string | null;
   spawn: SpawnRequest | null;
   accessRequest: AccessAsk | null;
-  steps: Array<{ index: number; status: StepStatus; note: string | null }> | null;
+  steps: Array<{ index: number; status: StepStatus; note: string | null; evidence?: string | null }> | null;
   discuss: { agents: string[]; question: string } | null;
   verify: string | null;
   handoff: string | null;
   notify: { headline: string; detail: string } | null;
 }
 
-/** Caps how many `claude` processes exist at once across the whole server. */
-class Semaphore {
-  private active = 0;
-  private queue: Array<() => void> = [];
-  private readonly limit: number;
-
-  constructor(limit: number) {
-    this.limit = limit;
-  }
-
-  get saturated(): boolean {
-    return this.active >= this.limit;
-  }
-
-  async acquire(): Promise<() => void> {
-    if (this.active >= this.limit) {
-      await new Promise<void>((resolve) => this.queue.push(resolve));
-    }
-    this.active++;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.active--;
-      this.queue.shift()?.();
-    };
-  }
-}
+/** Caps how many CLI processes exist at once. The class lives in semaphore.ts. */
 
 /**
  * One line of transcript, named so it can be cited.
@@ -751,6 +772,8 @@ function buildRunReport(
   if (missed.length > 0) {
     lines.push(`↷ Never reached: ${missed.length} step${missed.length === 1 ? "" : "s"}.`);
   }
+  // What the harness can vouch for: the verifier's verdicts, not the prose.
+  lines.push(...receiptSections(goal));
 
   // Steps come BEFORE the prompt: see it yourself, then decide to fix it.
   // A prompt with no way to check the claim is asking Dominic to take it on trust.
@@ -915,8 +938,13 @@ const PROGRESS_SCHEMA = {
             type: ["string", "null"],
             description: "Short reason, required when blocked.",
           },
+          evidence: {
+            type: ["string", "null"],
+            description:
+              "REQUIRED when status is done: what ran or was seen that shows it, citing the [#seq] where it was reported — a command and its output, a file and line, a number, a page. A done with no evidence is recorded as still active. Null for other statuses.",
+          },
         },
-        required: ["index", "status", "note"],
+        required: ["index", "status", "note", "evidence"],
         additionalProperties: false,
       },
     },
@@ -981,6 +1009,52 @@ const PROGRESS_SCHEMA = {
   // answer to each; null is still the right answer when the verdict is not
   // blocked.
   required: ["verdict", "summary", "accessRequest", "blocker", "needFromDominic", "choices"],
+  additionalProperties: false,
+} as const;
+
+/** The verifier's answer: one verdict per contract condition, with evidence. */
+const VERIFY_SCHEMA = {
+  type: "object",
+  properties: {
+    checks: {
+      type: "array",
+      description: "One entry per done-when condition, in the order given, index 0 first.",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "number", description: "0-based index of the condition." },
+          verdict: {
+            type: "string",
+            enum: ["pass", "fail", "unverified"],
+            description:
+              "pass only with evidence you can cite; fail when it is missing or contradicted; unverified when nothing in this room can show it.",
+          },
+          evidence: {
+            type: "string",
+            description:
+              "What shows it, two lines at most: the [#seq], the command and its output, the file and line, the number. For fail or unverified: what is missing.",
+          },
+        },
+        required: ["index", "verdict", "evidence"],
+        additionalProperties: false,
+      },
+    },
+    risks: {
+      type: "array",
+      items: { type: "string" },
+      description: "Risks you see in what was done, one line each. Empty when none.",
+    },
+    approvals: {
+      type: "array",
+      items: { type: "string" },
+      description: "Actions that still need Dominic's go before they happen. Empty when none.",
+    },
+    summary: {
+      type: "string",
+      description: "Two sentences for the room, Taglish: what holds and what does not.",
+    },
+  },
+  required: ["checks", "risks", "approvals", "summary"],
   additionalProperties: false,
 } as const;
 
@@ -1090,11 +1164,14 @@ function planText(goalId: string | null): string {
     const owner = s.ownerId ? ` (${s.ownerId})` : "";
     const note = s.note ? ` — ${s.note}` : "";
     const after = s.dependsOn.length ? ` [after ${s.dependsOn.join(", ")}]` : "";
-    return `${mark} ${s.idx}. ${s.title}${owner}${after}${note}`;
+    const evidence = s.evidence ? ` · evidence: ${s.evidence.slice(0, 160)}` : "";
+    return `${mark} ${s.idx}. ${s.title}${owner}${after}${note}${evidence}`;
   });
+  const contract = contractText(goal);
   return [
     `Your plan for "${goal.title}":`,
     ...lines,
+    ...(contract ? ["", contract, ""] : []),
     `Steps whose "after" list is all done start together, each with its own owner, before you decide.`,
     "",
   ].join("\n");
@@ -1165,10 +1242,12 @@ function turnInstruction(lead: string): string {
  * undoes any forge. Best effort: a commit failing must never fail a run.
  */
 function gitCommitFile(file: string, message: string, author: string): void {
-  const rel = relative(config.root, file);
+  // Agent files live in their own repo (agents/.git) — see agents-repo.ts.
+  const root = agentsRepoRoot();
+  const rel = relative(root, file);
   const git = (args: string[]): Promise<void> =>
     new Promise((resolve, reject) => {
-      execFile("git", ["-C", config.root, ...args], { timeout: 15_000 }, (err) =>
+      execFile("git", ["-C", root, ...args], { timeout: 15_000 }, (err) =>
         err ? reject(err) : resolve(),
       );
     });
@@ -1254,6 +1333,54 @@ export class Orchestrator {
 
   /** The last blocker each goal escalated, so a resumed goal does not re-send the same one. */
   private readonly lastBlocker = new Map<string, string>();
+  /** How many times a goal's "done" failed verification; two ends the run. */
+  private readonly verifyFails = new Map<string, number>();
+  /**
+   * Every access ask this goal has made, by kind + path, with how it ended.
+   * Keyed by goal id, or room id before a goal exists. One ask per thing per
+   * goal: a repeat of anything already here is refused without a word to the
+   * room, and the ledger is read back to the orchestrator in every prompt so
+   * it stops asking and works with what it has. Before this, one goal asked
+   * for the same missing folder eight times in a row.
+   */
+  private readonly accessLedger = new Map<
+    string,
+    Map<string, { roomId: string; outcome: "asked" | "allowed" | "denied" | "dropped"; note: string; at: number }>
+  >();
+
+  private ledgerFor(goalKey: string) {
+    let m = this.accessLedger.get(goalKey);
+    if (!m) {
+      m = new Map();
+      this.accessLedger.set(goalKey, m);
+    }
+    return m;
+  }
+
+  private static askKey(kind: string, path: string | null): string {
+    return `${kind}|${(path ?? "").trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()}`;
+  }
+
+  /** The ledger as prompt text, or "" when this goal has asked for nothing yet. */
+  private accessNotes(roomId: string, goalId: string | null): string {
+    const m = this.accessLedger.get(goalId ?? roomId);
+    if (!m || m.size === 0) return "";
+    const lines = [`Access already settled for this goal — do NOT ask for any of these again:`];
+    for (const [key, e] of m) {
+      const [kind, path] = key.split("|");
+      const what = `${kind}${path ? ` ${path}` : ""}`;
+      const how =
+        e.outcome === "allowed"
+          ? "granted — it is held now, use it"
+          : e.outcome === "denied"
+            ? "Dominic tapped Deny — carry on without it and say what you could not check"
+            : e.outcome === "dropped"
+              ? `refused by the harness (${e.note}) — it cannot be granted; work with what the room has, or mark the step blocked with what you could not check`
+              : "asked, waiting for his tap";
+      lines.push(`  - ${what}: ${how}`);
+    }
+    return lines.join("\n");
+  }
 
   /** Per-goal grants Dominic allowed with "Allow for this goal", taken back when it closes. */
   private readonly tempGrants = new Map<string, Array<{ agentId: string; dirs: string[]; allow: string[] }>>();
@@ -1288,6 +1415,9 @@ export class Orchestrator {
     const q = this.inbox.get(roomId) ?? [];
     q.push(item);
     this.inbox.set(roomId, q);
+    console.log(
+      JSON.stringify({ event: "run_queued", room: roomId, waiting: q.length, kind: item.kind }),
+    );
     if (item.kind === "direct" || item.humanText.trim()) {
       this.post({
         roomId,
@@ -1414,7 +1544,9 @@ export class Orchestrator {
   stop(roomId: string): boolean {
     const run = this.runs.get(roomId);
     if (!run) return false;
-    run.state.stopReason = "stopped";
+    // First cancel wins. A second Stop, or a Stop after timeout already sealed
+    // the run, aborts again and leaves the original reason in place.
+    this.seal(run.state, "stopped");
     run.abort.abort();
     return true;
   }
@@ -1516,9 +1648,68 @@ export class Orchestrator {
     phase: RunPhase | null,
     detail: string | null = null,
   ): void {
+    if (phase === null) {
+      state.phase = null;
+      state.phaseDetail = null;
+      this.publishRun(state);
+      return;
+    }
+    const from = state.status ?? state.phase ?? "planning";
+    const result = transitionPhase(from, phase);
+    if (!result.ok) {
+      console.log(
+        JSON.stringify({
+          event: "run_transition",
+          room: state.roomId,
+          ok: false,
+          from: result.from,
+          to: result.to,
+          reason: result.reason,
+        }),
+      );
+      return;
+    }
+    if (!result.duplicate) {
+      console.log(
+        JSON.stringify({
+          event: "run_transition",
+          room: state.roomId,
+          ok: true,
+          from: result.from,
+          to: result.to,
+        }),
+      );
+    }
+    state.status = phase;
     state.phase = phase;
     state.phaseDetail = detail;
     this.publishRun(state);
+  }
+
+  /**
+   * End a run. The first reason sticks. A later "done" after a failure is
+   * refused, so the finally block cannot mark a crashed run completed.
+   */
+  private seal(state: RunState, legacy: LegacyStopReason, detail?: string): void {
+    const from = state.status ?? state.phase ?? "planning";
+    const result = transitionTerminal(from, legacy, detail);
+    console.log(
+      JSON.stringify({
+        event: "run_terminal",
+        room: state.roomId,
+        ok: result.ok,
+        duplicate: result.ok ? result.duplicate : false,
+        from: result.from,
+        to: result.to,
+        stopReason: legacy,
+        kind: result.ok ? result.terminal?.kind ?? state.terminal?.kind ?? null : null,
+        ...(!result.ok ? { reason: result.reason } : {}),
+      }),
+    );
+    if (!result.ok || result.duplicate || !result.terminal) return;
+    state.stopReason = result.terminal.stopReason;
+    state.status = result.terminal.status;
+    state.terminal = result.terminal;
   }
 
   /**
@@ -1688,6 +1879,16 @@ export class Orchestrator {
     request: AccessAsk;
   }): "asked" | "held" | "dropped" {
     const { roomId, room, state, roster, agents } = opts;
+    const goalKey = state.goalId ?? roomId;
+    const ledger = this.ledgerFor(goalKey);
+    const firstKey = Orchestrator.askKey(opts.request.kind, opts.request.path);
+    const prior = ledger.get(firstKey);
+    if (prior && prior.outcome !== "allowed") {
+      // Asked before in this goal and not granted: refused, denied, or still
+      // waiting. Asking again is the loop this ledger exists to end. The prompt
+      // already tells the orchestrator so; nothing more goes to the room.
+      return "dropped";
+    }
     // Orchestrators often send kind:dir for "the project folder" even when the
     // folder has not been scaffolded yet. Read of a missing path can never
     // succeed, so the Allow button used to be dropped and Dominic only got
@@ -1709,9 +1910,16 @@ export class Orchestrator {
       }
     }
     if ("error" in resolved) {
-      this.post({ roomId, authorId: "system", kind: "notice", text: `Access request dropped: ${resolved.error}` });
+      ledger.set(firstKey, { roomId, outcome: "dropped", note: resolved.error, at: Date.now() });
+      this.post({
+        roomId,
+        authorId: "system",
+        kind: "notice",
+        text: `Access request refused: ${resolved.error} This will not be asked again for this goal.`,
+      });
       return "dropped";
     }
+    const key = Orchestrator.askKey(request.kind, request.path);
     const named = (request.agents ?? []).map((a) => a.trim().toLowerCase()).filter((a) => agents.has(a));
     const goalNow = state.goalId ? getGoal(state.goalId) : null;
     const blockedOwners = [
@@ -1728,6 +1936,7 @@ export class Orchestrator {
       return a ? accessHeld(a, request.kind, resolved.label) : false;
     });
     if (already) {
+      ledger.set(key, { roomId, outcome: "allowed", note: resolved.label, at: Date.now() });
       this.post({ roomId, authorId: "system", kind: "notice", text: `${targets.join(", ")} already ${targets.length === 1 ? "has" : "have"} access to ${resolved.label} — carry on.` });
       return "held";
     }
@@ -1755,11 +1964,12 @@ export class Orchestrator {
       `🔐 Kailangan ni ${who} ng ${need} ${resolved.label} para ituloy.` +
       (cleanField(request.reason) ? `\n${cleanField(request.reason)}` : "") +
       `\nPayag ka? Tap one below.`;
+    ledger.set(key, { roomId, outcome: "asked", note: resolved.label, at: Date.now() });
     this.post({ roomId, authorId: room.orchestratorId, kind: "handoff", text, directedBy: null, choices });
     this.recordNotify(roomId, withRoles(text + "\n\n1. Allow for this goal\n2. Always allow\n3. Deny", roster), "escalation");
     // Waiting on a button is not "blocked": nothing auto-resumes it, and the
     // per-goal grants it may already hold are kept until the goal is over.
-    state.stopReason = "awaiting_access";
+    this.seal(state, "awaiting_access");
     return "asked";
   }
 
@@ -1805,8 +2015,26 @@ export class Orchestrator {
     const room = getRoom(roomId);
     if (!room) return;
     if (!grant || /^deny/i.test(label)) {
-      this.post({ roomId, authorId: "system", kind: "event", text: `access denied by Dominic · ${label}` });
+      // Deny settles every ask this room has open: the next turn must not
+      // put the same buttons up again.
+      for (const m of this.accessLedger.values()) {
+        for (const e of m.values()) {
+          if (e.roomId === roomId && e.outcome === "asked") {
+            e.outcome = "denied";
+            e.at = Date.now();
+          }
+        }
+      }
+      this.post({ roomId, authorId: "system", kind: "event", text: `access denied by Dominic · ${label} · not asked again this goal` });
       return;
+    }
+    {
+      const m = this.accessLedger.get(grant.goalId ?? roomId);
+      const e = m?.get(Orchestrator.askKey(grant.kind, grant.path));
+      if (e) {
+        e.outcome = "allowed";
+        e.at = Date.now();
+      }
     }
     const agents = this.getAgents();
     const roster = room.members.map((id) => agents.get(id)).filter((a): a is Agent => a !== undefined);
@@ -2515,13 +2743,24 @@ export class Orchestrator {
   private applySteps(
     roomId: string,
     goalId: string,
-    reported: Array<{ index: number; status: StepStatus; note: string | null }> | null | undefined,
+    reported: Array<{ index: number; status: StepStatus; note: string | null; evidence?: string | null }> | null | undefined,
     agents: Map<string, Agent>,
   ): void {
     if (!reported?.length) return;
+    // The evidence gate: a done with nothing behind it is not done. It stays
+    // active on the board and the room is told, so a claim never becomes a fact.
+    const { accepted, refused } = gateStepReports(reported);
+    for (const r of refused) {
+      this.post({
+        roomId,
+        authorId: "system",
+        kind: "notice",
+        text: `step ${r.index + 1} was reported done with no evidence — not accepted. Say what ran or what was seen, citing [#seq].`,
+      });
+    }
     let touched = false;
-    for (const r of reported) {
-      const updated = updateStep(goalId, r.index, r.status, r.note);
+    for (const r of [...accepted, ...refused]) {
+      const updated = updateStep(goalId, r.index, r.status, r.note, r.evidence ?? null);
       if (!updated) continue;
       touched = true;
       const owner = updated.ownerId ? agents.get(updated.ownerId) : undefined;
@@ -2532,7 +2771,8 @@ export class Orchestrator {
         text:
           `step ${r.status} · ${updated.idx + 1}. ${updated.title}` +
           (owner ? ` · ${owner.name}` : "") +
-          (r.note ? ` — ${r.note}` : ""),
+          (r.note ? ` — ${r.note}` : "") +
+          (r.evidence ? ` · evidence: ${r.evidence.slice(0, 160)}` : ""),
       });
     }
     if (touched) {
@@ -2628,7 +2868,7 @@ export class Orchestrator {
       roomId,
       schema: PROGRESS_SCHEMA,
       signal,
-      busyPhase: "deciding",
+      busyPhase: "reviewing",
       prompt: [
         mindStoneText(roomId),
         final
@@ -2650,6 +2890,8 @@ export class Orchestrator {
         // statuses and escalated "the prompt was never written" while a
         // complete 1,977-character prompt sat in the goal's handoff field.
         handoffState(state.goalId),
+        "",
+        this.accessNotes(roomId, state.goalId),
         "",
         `This room does not stop because it has used up turns. It stops when the`,
         `goal is met, or when it genuinely cannot proceed without Dominic.`,
@@ -2693,7 +2935,7 @@ export class Orchestrator {
     const out = result.structured as {
       verdict?: string;
       summary?: string;
-      steps?: Array<{ index: number; status: StepStatus; note: string | null }>;
+      steps?: Array<{ index: number; status: StepStatus; note: string | null; evidence?: string | null }>;
       blocker?: string | null;
       needFromDominic?: string | null;
       choices?: Choice[] | null;
@@ -2733,8 +2975,43 @@ export class Orchestrator {
     if (out.verdict === "continue") return true;
 
     if (out.verdict === "done") {
-      state.stopReason = "done";
-      return false;
+      // "Done" is a claim. The verifier turns it into verdicts with evidence, or
+      // sends the room back to the conditions it could not confirm.
+      const verified = await this.verifyGoal({ roomId, room, orchestrator, roster, agents, state, signal });
+      if (signal.aborted) return false;
+      if (verified) {
+        this.seal(state, "done");
+        return false;
+      }
+      const key = state.goalId ?? roomId;
+      const fails = (this.verifyFails.get(key) ?? 0) + 1;
+      this.verifyFails.set(key, fails);
+      if (fails >= 2) {
+        // Twice the room said done and twice the verifier could not confirm it.
+        // A third try is the retry loop Dominic is not; stop with the receipt.
+        this.seal(state, "blocked", "verification failed twice");
+        const goal = state.goalId ? getGoal(state.goalId) : null;
+        const report = withRoles(
+          goal ? buildRunReport(goal, agents, null) : "Verification failed twice; the goal stays open.",
+          roster,
+        );
+        this.post({ roomId, authorId: orchestrator.id, kind: "handoff", text: report, directedBy: null });
+        const blockerKey = "verification failed twice";
+        if (state.goalId && this.lastBlocker.get(state.goalId) === blockerKey) {
+          this.post({ roomId, authorId: "system", kind: "event", text: "same blocker as last time — not sent to WhatsApp again" });
+        } else {
+          if (state.goalId) this.lastBlocker.set(state.goalId, blockerKey);
+          this.recordNotify(roomId, report, "escalation");
+        }
+        return false;
+      }
+      this.post({
+        roomId,
+        authorId: "system",
+        kind: "notice",
+        text: "Verification did not pass — the room keeps working on the unmet conditions. The next \"done\" gets one more check.",
+      });
+      return true;
     }
 
     // A structured access request beats a prose blocker: buttons, not a
@@ -2803,7 +3080,7 @@ export class Orchestrator {
       return true;
     }
 
-    state.stopReason = "blocked";
+    this.seal(state, "blocked");
     const need = cleanField(out.needFromDominic);
     const blocker = cleanField(out.blocker);
     const report = withRoles(
@@ -2851,6 +3128,112 @@ export class Orchestrator {
       this.recordNotify(roomId, report, "escalation");
     }
     return false;
+  }
+
+  /**
+   * The verifier turn — builder and verifier are different agents.
+   *
+   * An orchestrator saying "done" is one more model output. This turn asks an
+   * agent who did not do the work to try to disprove it: one verdict per
+   * contract condition, each with the evidence it cites. The verdicts are
+   * stored on the goal, the receipt is built from them, and `closeGoal`
+   * refuses "done" without a passed verification. A goal planned before
+   * contracts existed has nothing to check and passes untouched.
+   */
+  private async verifyGoal(opts: {
+    roomId: string;
+    room: Room;
+    orchestrator: Agent;
+    roster: Agent[];
+    agents: Map<string, Agent>;
+    state: RunState;
+    signal: AbortSignal;
+  }): Promise<boolean> {
+    const { roomId, room, orchestrator, roster, agents, state, signal } = opts;
+    if (!state.goalId) return true;
+    const goal = getGoal(state.goalId);
+    if (!goal || goal.doneWhen.length === 0) return true;
+
+    const builders = new Set(goal.steps.map((s) => s.ownerId).filter((id): id is string => !!id));
+    const verifier = pickVerifier(roster, orchestrator.id, builders) ?? orchestrator;
+    this.post({
+      roomId,
+      authorId: "system",
+      kind: "event",
+      text: `verifying · ${verifier.name} checks ${goal.doneWhen.length} condition${goal.doneWhen.length === 1 ? "" : "s"} before this goal can close`,
+    });
+
+    const board = goal.steps
+      .map(
+        (s) =>
+          `  ${s.status === "done" ? "[x]" : "[ ]"} ${s.idx + 1}. ${s.title}${s.ownerId ? ` (${s.ownerId})` : ""}` +
+          (s.evidence ? ` — evidence: ${s.evidence}` : " — no evidence recorded"),
+      )
+      .join("\n");
+
+    const result = await this.runTurn({
+      agent: verifier,
+      roomName: room.name,
+      roster,
+      roomId,
+      schema: VERIFY_SCHEMA,
+      signal,
+      busyPhase: "reviewing",
+      prompt: [
+        mindStoneText(roomId),
+        `You are the VERIFIER for this goal, not its builder. Your job is to try to DISPROVE that it is done.`,
+        `Goal: "${goal.title}"`,
+        "",
+        contractText({ ...goal, verification: null }),
+        "",
+        `The board, with the evidence each step reported:`,
+        board,
+        "",
+        `Room transcript so far:`,
+        "---",
+        renderTranscript(listMessages(roomId, config.transcriptWindow), agents) || "(empty)",
+        "---",
+        "",
+        `For EACH condition, in order, one entry in "checks":`,
+        `  pass — only when you can point at evidence that it holds NOW: a [#seq] in the transcript`,
+        `         where the output was shown, a command and what it printed, a file and line, a number.`,
+        `         If you hold the tools to re-check it yourself, do so and cite what you saw.`,
+        `  fail — the evidence is missing, contradicts the condition, or a step claims it without showing it.`,
+        `  unverified — nothing in this room can show it; say what could.`,
+        `An agent saying "done" is a claim, not evidence. Quote the evidence in the evidence field, two lines at most.`,
+        `A constraint that was broken is a fail on the nearest condition, with the breach as the evidence.`,
+        `Then list the risks you see, and anything that still needs Dominic's go before it happens.`,
+        `Do not fix anything and do not assign work. Verdicts only; Taglish where there is prose.`,
+      ].join("\n"),
+    });
+    if (signal.aborted) return false;
+    if (result.costUsd) state.costUsd += result.costUsd;
+
+    const raw = result.structured as { checks?: unknown; risks?: unknown; approvals?: unknown; summary?: string } | null;
+    if (result.isError || !raw || !Array.isArray(raw.checks)) {
+      this.post({ roomId, authorId: "system", kind: "notice", text: `Verification returned no verdicts — the goal stays open.` });
+      return false;
+    }
+    const verification = normalizeVerification(raw, goal.doneWhen.length, verifier.id);
+    const updated = setGoalVerification(goal.id, verification);
+    if (updated) this.emit({ type: "goal", goal: updated });
+
+    const passed = verification.checks.filter((c) => c.verdict === "pass").length;
+    const failing = verification.checks
+      .filter((c) => c.verdict !== "pass")
+      .map((c) => `${c.index + 1}. ${goal.doneWhen[c.index]?.text ?? ""} — ${c.verdict}${c.evidence ? `: ${c.evidence}` : ""}`);
+    this.post({
+      roomId,
+      authorId: verifier.id,
+      kind: "agent",
+      text: [`Verification: ${passed} of ${goal.doneWhen.length} conditions pass.`, cleanField(raw.summary), ...failing]
+        .filter(Boolean)
+        .join("\n"),
+      directedBy: null,
+      costUsd: result.costUsd,
+      durationMs: result.durationMs,
+    });
+    return verification.passed;
   }
 
   /**
@@ -2907,6 +3290,8 @@ export class Orchestrator {
         `  · what is blocked and precisely what would unblock it`,
         `  · constraints and preferences he has stated`,
         `  · anything that would otherwise be asked a second time`,
+        `  · lessons — a failure this room hit and what to do differently next time,`,
+        `    one line each, under a heading "Lessons"`,
         "",
         `Drop: pleasantries, restatements, superseded plans, anything already`,
         `implied by the room's rules, and detail nobody will act on again.`,
@@ -3034,6 +3419,8 @@ export class Orchestrator {
       speaking: agent.id,
       costUsd: 0,
       stopReason: null,
+      status: "generating",
+      terminal: null,
       phase: "generating",
       phaseDetail: null,
       timeoutMs: config.turnTimeoutMs,
@@ -3119,9 +3506,9 @@ export class Orchestrator {
       } else {
         this.post({ roomId, authorId: "system", kind: "notice", text: `${agent.name} returned nothing.` });
       }
-      state.stopReason = "done";
+      this.seal(state, "done");
     } catch (err) {
-      state.stopReason = "error";
+      this.seal(state, "error", err instanceof Error ? err.message : String(err));
       const detail = err instanceof Error ? err.message : String(err);
       this.emit({ type: "error", roomId, detail });
     } finally {
@@ -3242,6 +3629,8 @@ export class Orchestrator {
       speaking: null,
       costUsd: 0,
       stopReason: null,
+      status: "planning",
+      terminal: null,
       phase: "planning",
       phaseDetail: null,
       timeoutMs: config.runTimeoutMs,
@@ -3252,6 +3641,7 @@ export class Orchestrator {
     };
     if (resumed) {
       state.goalId = resumed.id;
+      state.status = "deciding";
       state.phase = "deciding";
     }
     this.runs.set(roomId, { abort, state });
@@ -3267,7 +3657,7 @@ export class Orchestrator {
     }
 
     const deadline = setTimeout(() => {
-      state.stopReason = "timeout";
+      this.seal(state, "timeout");
       abort.abort();
     }, config.runTimeoutMs);
 
@@ -3329,6 +3719,15 @@ export class Orchestrator {
             `"work" — he ASSIGNED something. Build, run, check, audit, compare, find`,
             `  out, plan this properly. The room does it together. Break it into the`,
             `  smallest set of checkable steps and set responder to null.`,
+            `  Write the CONTRACT before the steps. doneWhen is two to five conditions`,
+            `  that must ALL hold for the goal to count as done, each with HOW it will`,
+            `  be shown — a command and what it prints, a file and line, a number`,
+            `  measured, a page seen. Outcomes, never activities: "the 3 failing tests`,
+            `  pass (pnpm test prints 0 fail)", not "run the tests". A verifier who was`,
+            `  not on the work checks each one before the goal closes and can only pass`,
+            `  what has evidence. constraints: what the room must not change or do here.`,
+            `  approvals: what needs Dominic's go before it happens (push, deploy, send,`,
+            `  spend, delete). All three are empty arrays in answer mode.`,
             ``,
             `A PLAN HE HANDED YOU IS ALWAYS "work" — never "answer", never a`,
             `discussion. If his message carries steps, a spec, a config, a diff, an`,
@@ -3422,7 +3821,7 @@ export class Orchestrator {
               });
             });
           }
-          state.stopReason = "done";
+          this.seal(state, "done");
           return;
         }
       }
@@ -3543,7 +3942,7 @@ export class Orchestrator {
               });
             });
           }
-          state.stopReason = "done";
+          this.seal(state, "done");
           return;
         }
 
@@ -3554,7 +3953,8 @@ export class Orchestrator {
             dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn : [],
           }));
           if (steps.length > 0) {
-            let goal = createGoal({ roomId, title: plan.goal, steps });
+            const contract = normalizeContract(plan);
+            let goal = createGoal({ roomId, title: plan.goal, steps, ...contract });
             state.goalId = goal.id;
             const tailorMap: Record<string, Tailor> = {};
             for (const t of plan.tailor ?? []) {
@@ -3585,7 +3985,11 @@ export class Orchestrator {
               roomId,
               authorId: "system",
               kind: "event",
-              text: `planned · ${goal.title} · ${steps.length} step${steps.length === 1 ? "" : "s"}`,
+              text:
+                `planned · ${goal.title} · ${steps.length} step${steps.length === 1 ? "" : "s"}` +
+                (contract.doneWhen.length
+                  ? ` · done when ${contract.doneWhen.length} condition${contract.doneWhen.length === 1 ? "" : "s"} hold`
+                  : " · no contract — the planner gave no done-when"),
               costUsd: planResult.costUsd,
               durationMs: planResult.durationMs,
             });
@@ -3602,11 +4006,30 @@ export class Orchestrator {
       const lastSpokeTurn = new Map<string, number>();
 
       while (!abort.signal.aborted) {
+        const caps = evaluateCaps({
+          turn: state.turn,
+          maxTurns: state.maxTurns,
+          round,
+          maxRounds: config.maxRounds,
+          sinceReviewMs: Date.now() - lastReview,
+          reviewEveryMs: config.reviewEveryMs,
+          costUsd: state.costUsd,
+          costCapUsd: config.goalCostCapUsd,
+        });
+        if (caps.approaching.length > 0) {
+          console.log(
+            JSON.stringify({ event: "cap_approaching", room: roomId, caps: caps.approaching, turn: state.turn }),
+          );
+        }
+        if (caps.fired) {
+          console.log(JSON.stringify({ event: "cap_fired", room: roomId, cap: caps.fired, turn: state.turn }));
+        }
+
         // The money backstop. A run that has spent its allowance stops and says
         // so; Resume grants a fresh one. Blocked, not turn_cap, so it never
         // picks itself back up and spends another.
         if (config.goalCostCapUsd > 0 && state.costUsd >= config.goalCostCapUsd) {
-          state.stopReason = "paused";
+          this.seal(state, "paused");
           const spent = `$${state.costUsd.toFixed(2)}`;
           this.post({
             roomId,
@@ -3631,7 +4054,7 @@ export class Orchestrator {
         if (state.turn >= state.maxTurns || dueOnClock) {
           round++;
           if (round > config.maxRounds) {
-            state.stopReason = "turn_cap";
+            this.seal(state, "turn_cap");
             this.post({
               roomId,
               authorId: "system",
@@ -3792,6 +4215,7 @@ export class Orchestrator {
             "---",
             "",
             planText(state.goalId),
+            this.accessNotes(roomId, state.goalId),
             `Agents you can assign:`,
             rosterText || "(none)",
             "",
@@ -3805,6 +4229,11 @@ export class Orchestrator {
             `each one done, blocked, or still active. Do not hand out a step that`,
             `is already active.`,
             `Only mark a step done when it genuinely is. Blocked is an honest answer.`,
+            `A step marked done MUST carry evidence: what ran or was seen, citing the`,
+            `[#seq] where it was shown. Done without evidence is recorded as still`,
+            `active. Before this goal can close, a verifier who did not do the work`,
+            `checks every done-when condition above, so aim the room at those`,
+            `conditions, not at the step titles.`,
             `When the next move is a JUDGEMENT rather than legwork — which fix,`,
             `how bad is this really, is anyone seeing a risk — set "discuss" with`,
             `two to four agents instead of assigning one. They will hear each`,
@@ -3822,7 +4251,7 @@ export class Orchestrator {
         if (abort.signal.aborted) break;
 
         if (decisionResult.isError || decisionResult.structured == null) {
-          state.stopReason = "orchestrator_error";
+          this.seal(state, "orchestrator_error", decisionResult.text.slice(0, 300));
           this.post({
             roomId,
             authorId: "system",
@@ -3992,7 +4421,7 @@ export class Orchestrator {
             }
             break;
           }
-          state.stopReason = "done";
+          this.seal(state, "done");
           break;
         }
 
@@ -4021,8 +4450,8 @@ export class Orchestrator {
         if (outcome === "aborted") break;
       }
     } catch (err) {
-      state.stopReason = state.stopReason ?? "error";
       const detail = err instanceof Error ? err.message : String(err);
+      this.seal(state, "error", detail);
       // An aborted child process throws; that is a Stop, not a crash.
       if (!abort.signal.aborted) {
         this.emit({ type: "error", roomId, detail });
@@ -4035,7 +4464,7 @@ export class Orchestrator {
       state.phase = null;
       state.phaseDetail = null;
       state.turnStartedAt = null;
-      state.stopReason = state.stopReason ?? "done";
+      if (!state.terminal) this.seal(state, "done");
 
       if (state.goalId) {
         // Only "done" closes the goal as achieved — a turn cap or a stop means
